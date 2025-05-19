@@ -10,8 +10,9 @@ Based on the wonderful [blog posts](https://os.phil-opp.com/) by Philipp Opperma
 - Fix 
 
 ## Installation
-´´´
+
+~~~
 git clone https://github.com/bjoernp116/PollOS
 cd PollOS/
 just run
-´´´
+~~~
