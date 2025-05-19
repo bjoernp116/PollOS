@@ -23,7 +23,6 @@ pub fn create_example_mapping(
         mapper.map_to(page, frame, flags, frame_allocator)
     };
     map_to_result.expect("map_to failed").flush();
-
 }
 
 unsafe fn active_level_4_table(

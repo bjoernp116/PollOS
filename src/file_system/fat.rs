@@ -6,7 +6,7 @@ use crate::println;
 const ATA_PRIMARY_IO: u16 = 0x1F0;
 const ATA_PRIMARY_CTRL: u16 = 0x3F6;
 
-const SECTOR_SIZE: usize = 1_000_000;
+const SECTOR_SIZE: usize = 512;
 
 unsafe fn ata_pio_read_sector(lba: u32, buffer: &mut [u8; SECTOR_SIZE]) {
 
