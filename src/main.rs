@@ -7,8 +7,8 @@
 
 use core::{panic::PanicInfo};
 use bootloader::{entry_point, BootInfo};
-use pollos::{memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
-use x86_64::VirtAddr;
+use pollos::{file_system::read_boot_sector, memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
+use x86_64::{instructions::port::Port, VirtAddr};
 
 extern crate alloc;
 
@@ -18,6 +18,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("Hello, World!");
     pollos::init();
 
+
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { 
@@ -25,15 +26,9 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     };
     init_heap(&mut mapper, &mut frame_allocator).expect("heap init failed!");
 
-    unsafe {
-        core::arch::asm!(
-            "mov ebx, 1",
-            "mov edx, 800",
-            "int 0x80",  
-            options(nostack, nomem)
-        );  
-    }
 
+    let boot_sector = unsafe { read_boot_sector() }; 
+    //let root_dir = file_system::read_root_directory(&boot_sector);
 
     hlt_loop();
 }
