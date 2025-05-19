@@ -33,3 +33,6 @@ panic = "abort"
 
 [profile.test]
 panic = "unwind"
+
+[features]
+default = []

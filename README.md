@@ -3,11 +3,14 @@
 Kernel written in Rust, right now it only supports x86_64.
 Based on the wonderful [blog posts](https://os.phil-opp.com/) by Philipp Oppermann.
 
-
-
 ## TODO:
+
 - ARM & AArch compatability
-- Fix 
+- Fix system calls
+- Kernel Module API
+- User Programs
+- File System
+- Window Manager
 
 ## Installation
 

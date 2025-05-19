@@ -1,12 +1,11 @@
-use core::{alloc::GlobalAlloc, ptr::null_mut};
 use super::*;
-
+use core::{alloc::GlobalAlloc, ptr::null_mut};
 
 pub struct BumpAllocator {
     heap_start: usize,
     heap_end: usize,
     next: usize,
-    allocations: usize
+    allocations: usize,
 }
 
 impl BumpAllocator {
@@ -30,10 +29,10 @@ unsafe impl GlobalAlloc for Allocator<BumpAllocator> {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
         let mut bump = self.lock();
 
-        let alloc_start = align_up(bump.next, layout.align());        
+        let alloc_start = align_up(bump.next, layout.align());
         let alloc_end = match alloc_start.checked_add(layout.size()) {
             Some(end) => end,
-            None => return null_mut()
+            None => return null_mut(),
         };
 
         if alloc_end > bump.heap_end {
@@ -42,7 +41,6 @@ unsafe impl GlobalAlloc for Allocator<BumpAllocator> {
             bump.next = alloc_end;
             bump.allocations += 1;
             alloc_start as *mut u8
-            
         }
     }
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: core::alloc::Layout) {
@@ -54,9 +52,3 @@ unsafe impl GlobalAlloc for Allocator<BumpAllocator> {
         }
     }
 }
-
-
-
-
-
-

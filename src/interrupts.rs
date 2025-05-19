@@ -2,6 +2,7 @@ use x86_64::{registers::control::Cr2, structures::idt::{InterruptDescriptorTable
 use pic8259::ChainedPics;
 use spin;
 
+
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
@@ -17,6 +18,7 @@ use lazy_static::lazy_static;
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
+        idt[0x80].set_handler_fn(crate::syscall::syscall_handler);
         idt.breakpoint.set_handler_fn(breakpoint_handler);
         unsafe {
             idt.double_fault
