@@ -9,9 +9,10 @@ bootloader = { version = "0.9", features = ["map_physical_memory"]}
 spin = "0.10.0"
 uart_16550 = "0.3.2"
 volatile = "0.2.6"
-x86_64 = "0.14.2"
+x86_64 = { version = "0.15.2", features = ["instructions"] }
 pic8259 = "0.10.1"
 pc-keyboard = "0.8.0"
+bitflags = "2.9.1"
 
 [package.metadata.bootimage]
 test-args = [

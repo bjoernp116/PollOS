@@ -7,7 +7,7 @@
 
 use core::{panic::PanicInfo};
 use bootloader::{entry_point, BootInfo};
-use pollos::{file_system::read_boot_sector, memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
+use pollos::{file_system::{read_boot_sector, ATABus, BusDrive}, memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
 use x86_64::{instructions::port::Port, VirtAddr};
 
 extern crate alloc;
@@ -26,8 +26,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     };
     init_heap(&mut mapper, &mut frame_allocator).expect("heap init failed!");
 
+    println!("Creating Bus!");
+    let mut bus = ATABus::new(0x1F0, 0x3F6);
+    bus.identify_drive(BusDrive::Master);
 
-    let boot_sector = unsafe { read_boot_sector() }; 
+    //let boot_sector = unsafe { read_boot_sector() }; 
     //let root_dir = file_system::read_root_directory(&boot_sector);
 
     hlt_loop();
