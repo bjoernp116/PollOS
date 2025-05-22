@@ -1,0 +1,14 @@
+megs: 32
+romimage: file=/usr/share/bochs/BIOS-bochs-legacy
+vgaromimage: file=/usr/share/bochs/VGABIOS-lgpl-latest.bin
+log: bochslog.txt
+panic: action=ask
+error: action=report
+info: action=report
+debug: action=ignore
+floppy_bootsig_check: disabled=1
+
+ata0-master: type=cdrom, path="pollos.iso", status=inserted 
+display_library: x
+keyboard: type=mf, serial_delay=250, paste_delay=100000
+boot: disk

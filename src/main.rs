@@ -7,8 +7,8 @@
 
 use core::{panic::PanicInfo};
 use bootloader::{entry_point, BootInfo};
-use pollos::{file_system::{read_boot_sector, ATABus, BusDrive}, memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
-use x86_64::{instructions::port::Port, VirtAddr};
+use pollos::{file_system::{fat16::FAT16, ATABus, BusDrive, FileSystem}, memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
+use x86_64::VirtAddr;
 
 extern crate alloc;
 
@@ -26,13 +26,12 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     };
     init_heap(&mut mapper, &mut frame_allocator).expect("heap init failed!");
 
-    println!("Creating Bus!");
-    let mut bus = ATABus::new(0x1F0, 0x3F6);
-    bus.identify_drive(BusDrive::Master);
+    let ata = ATABus::new(0x1f0, 0x3f6);
+    let fat = FAT16::new(&ata, BusDrive::Slave).expect("Fat init failed!");
+    fat.parse_root_dir();
+    
 
-    //let boot_sector = unsafe { read_boot_sector() }; 
-    //let root_dir = file_system::read_root_directory(&boot_sector);
-
+    println!("Done");
     hlt_loop();
 }
 
@@ -47,7 +46,7 @@ fn trivial_assertion() {
 /// This function is called on panic.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
+    _panic!("{}", info);
     serial_println!("{}", info);
     hlt_loop();
 }

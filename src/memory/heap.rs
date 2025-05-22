@@ -1,7 +1,7 @@
 use x86_64::{structures::paging::{mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB}, VirtAddr};
 
 
-use super::allocator::{Allocator, BumpAllocator, ALLOCATOR};
+use super::allocator::{ALLOCATOR};
 
 pub const HEAP_START: usize = 0x_4444_4444_0000;
 pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB

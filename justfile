@@ -7,7 +7,10 @@ generate_disk:
 build:
     @cargo build && cargo bootimage
 
-run display="sdl": build
+bochs: build
+    bochs -f .bochsrc
+
+run args="" display="sdl": build
     qemu-system-x86_64 \
         -drive id=boot,\
             format=raw,\
@@ -22,7 +25,8 @@ run display="sdl": build
         -display {{display}} \
         -serial stdio \
         -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
-        -vga std
+        -vga std \
+        {{args}}
 
 test:
     @cargo test

@@ -15,7 +15,7 @@ pub extern "x86-interrupt" fn syscall_handler(
         //core::arch::asm!("mov {0:e}, ebx", out(reg) args[0]);
         core::arch::asm!(
             "mov {0:e}, ebx",
-            "mov {1:e}, edx",
+            "mov {1:e}, ecx",
             "mov {2:e}, esi",
             "mov {3:e}, edi",
             "mov {4:e}, ebp",
@@ -27,6 +27,14 @@ pub extern "x86-interrupt" fn syscall_handler(
 
         );
     }
+    println!(
+        "{} {} {} {} {}", 
+        syscall_number,
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+    );
     let syscall_type = match syscall_number {
         1 => SysCallType::Write,
         _ => {
@@ -39,7 +47,7 @@ pub extern "x86-interrupt" fn syscall_handler(
     };
     let syscall = SysCall {
         syscall_type,
-        args: Vec::from([arg1, arg2, arg3, arg4]),
+        args: Vec::from([arg1, arg2, arg3, ]),
     };
     syscall.execute();
 }

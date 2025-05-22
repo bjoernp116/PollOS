@@ -1,12 +1,17 @@
-use alloc::vec::Vec;
-use x86_64::{instructions::port::{Port, PortGeneric, PortReadOnly, PortWriteOnly, ReadOnlyAccess, WriteOnlyAccess}, structures::port::PortRead};
+use super::io::*;
+
+type Result<T> = core::result::Result<T, anyhow::Error>;
+use anyhow::anyhow;
 
 use bitflags::bitflags;
 
-use crate::println;
+use crate::{println, warn};
 use crate::serial_println;
 
+use super::SECTOR_SIZE;
+
 const PORT_MASK: u16 = 0xFFFC;
+const TIMEOUT: usize = 1000;
 
 bitflags! {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -26,29 +31,33 @@ bitflags! {
 #[repr(u8)]
 pub enum BusDrive {
     Master = 0 << 4,
-    Slave = 1 << 4
+    Slave = 1 << 4,
 }
 
 #[repr(u8)]
+#[allow(unused)]
 enum ATACommand {
     Read = 0x20,
     Write = 0x30,
     CacheFlush = 0xE7,
-    Identify = 0xEC
+    Identify = 0xEC,
 }
 
+
+#[allow(unused)]
+#[derive(Debug)]
 pub struct ATABus {
-    data: Port<u16>,            // BAR0 + 0
-    error: PortReadOnly<u8>,    // BAR0 + 1
-    sector_count: Port<u8>,     // BAR0 + 2
-    lba_low: Port<u8>,          // BAR0 + 3
-    lba_mid: Port<u8>,          // BAR0 + 4
-    lba_high: Port<u8>,         // BAR0 + 5
-    drive_select: Port<u8>,     // BAR0 + 6
-    command: PortWriteOnly<u8>, // BAR0 + 7
-    status: PortReadOnly<u8>,   // BAR0 + 7
-    alt_status: PortReadOnly<u8>,// BAR1 + 2
-    control: PortWriteOnly<u8>  // BAR1 + 2
+    data: PortRW<u16>,              // BAR0 + 0
+    error: PortReader<u8>,      // BAR0 + 1
+    sector_count: PortRW<u8>,       // BAR0 + 2
+    lba_low: PortRW<u8>,            // BAR0 + 3
+    lba_mid: PortRW<u8>,            // BAR0 + 4
+    lba_high: PortRW<u8>,           // BAR0 + 5
+    drive_select: PortRW<u8>,       // BAR0 + 6
+    command: PortWriter<u8>,   // BAR0 + 7
+    status: PortReader<u8>,     // BAR0 + 7
+    alt_status: PortReader<u8>, // BAR1 + 2
+    control: PortWriter<u8>,   // BAR1 + 2
 }
 
 impl ATABus {
@@ -57,167 +66,190 @@ impl ATABus {
         let ctrl_bar = ctrl_bar & PORT_MASK;
 
         ATABus {
-            data: Port::new(data_bar),
-            error: PortReadOnly::new(data_bar + 1),
-            sector_count: Port::new(data_bar + 2),
-            lba_low: Port::new(data_bar + 3),
-            lba_mid: Port::new(data_bar + 4),
-            lba_high: Port::new(data_bar + 5),
-            drive_select: Port::new(data_bar + 6),
-            command: PortWriteOnly::new(data_bar + 7),
-            status: PortReadOnly::new(data_bar + 7),
-            control: PortWriteOnly::new(ctrl_bar + 2),
-            alt_status: PortReadOnly::new(ctrl_bar + 2),
+            data: PortRW::new(data_bar),
+            error: PortReader::new(data_bar + 1),
+            sector_count: PortRW::new(data_bar + 2),
+            lba_low: PortRW::new(data_bar + 3),
+            lba_mid: PortRW::new(data_bar + 4),
+            lba_high: PortRW::new(data_bar + 5),
+            drive_select: PortRW::new(data_bar + 6),
+            command: PortWriter::new(data_bar + 7),
+            status: PortReader::new(data_bar + 7),
+            control: PortWriter::new(ctrl_bar + 2),
+            alt_status: PortReader::new(ctrl_bar + 2),
         }
     }
 
-    unsafe fn read_pio(&mut self, buffer: &mut [u8], lba_start: usize, sector_count: usize) -> usize {
-        if sector_count == 0 { return 0; }
-        
-        todo!()
-    }
-
-    pub fn identify_drive(&mut self, which: BusDrive) {
-        self.wait_for_done();
-        println!("Done!");
-
-        unsafe {
-            self.drive_select.write(0xA0 | which as u8);
-            self.sector_count.write(0);
-            self.lba_high.write(0);
-            self.lba_mid.write(0);
-            self.lba_low.write(0);
-
-
-            self.command.write(ATACommand::Identify as u8); // Causing Double Fault!
-
-            if self.status().is_empty() {
-                panic!("drive did not exist!");
-            }
-
-            while self.status().intersects(ATAStatus::BUSY) {
-                if self.lba_mid.read() != 0 || self.lba_high.read() != 0 {
-                    panic!("drive was not ATA!");
-                }
-            }
-
-            println!("You gooooood!");
+    pub fn read(
+        &self,
+        buffer: &mut [u8],
+        which: BusDrive,
+        lba_start: usize,
+        sector_count: usize,
+    ) -> Result<usize> {
+        if sector_count == 0 {
+            return Ok(0);
         }
 
+        let using_lba_28 = true;
+
+        self.wait_for_done()?;
+
+        if using_lba_28 {
+            self.drive_select.write(
+                0xE0 | (which as u8) | ((lba_start >> 24) as u8 & 0x0F));
+            self.sector_count.write(sector_count as u8);
+            self.lba_high.write((lba_start >> 16) as u8);
+            self.lba_mid.write((lba_start >> 8) as u8);
+            self.lba_low.write(lba_start as u8);
+            self.command.write(ATACommand::Read as u8);
+        }
+
+        let mut buffer_offset = 0;
+        for _lba in lba_start .. (lba_start + sector_count) {
+            self.wait_for_ready()?;
+
+            let range = buffer_offset .. (buffer_offset + SECTOR_SIZE);
+            for chunk in buffer[range].chunks_exact_mut(2) {
+                let word: u16 = self.data.read();
+                chunk[0] = word as u8;
+                chunk[1] = (word >> 8) as u8;
+            }
+            buffer_offset += SECTOR_SIZE;
+        }
+        self.wait_for_done()?;
+        Ok(sector_count)
     }
 
-    fn wait_for_done(&mut self) {
+    pub fn identify(&self, which: BusDrive) -> Result<DriveIdentity> {
+        self.wait_for_done()?;
+
+        self.drive_select.write(0xA0 | which as u8);
+        //self.wait_for_done();
+        self.sector_count.write(0);
+        self.lba_high.write(0);
+        self.lba_mid.write(0);
+        self.lba_low.write(0);
+
+        self.command.write(0xEC); //ATACommand::Identify as u8);
+        println!("pointer");
+
+        if self.status().is_empty() {
+            return Err(anyhow!("drive did not exist!"));
+        }
+
+        while self.status().intersects(ATAStatus::BUSY) {
+            if self.lba_mid.read() != 0 || self.lba_high.read() != 0 {
+                return Err(anyhow!("drive was not ATA!"));
+            }
+        }
+
+        let mut buffer: [u8; SECTOR_SIZE] = [0; SECTOR_SIZE];
+        self.wait_for_ready()?;
+        for chunk in buffer.chunks_exact_mut(2) {
+            let word: u16 = self.data.read();
+            chunk[0] = word as u8;
+            chunk[1] = (word >> 8) as u8;
+        }
+        self.wait_for_done()?;
+        Ok(DriveIdentity::new(buffer))
+    }
+
+
+    fn wait_for_done(&self) -> Result<()> {
         let mut timeout = 0;
         loop {
-            let status = unsafe { self.status() };
+            let status = self.status();
             timeout += 1;
             if status.intersects(ATAStatus::ERROR | ATAStatus::DRIVE_WRITE_FAULT) {
-                panic!("Error!");
+                return Err(anyhow!("Status intersects ERROR | DRIVE WRITE FAULT"))
             }
-            if status.intersects(ATAStatus::BUSY) && timeout == 1_000_000 {
+            if status.intersects(ATAStatus::BUSY) && timeout == TIMEOUT {
                 serial_println!("ATA Driver has been looping for 1 million iterations!");
             }
             if !status.intersects(ATAStatus::DATA_REQUEST_READY) {
-                return;
+                return Ok(());
             }
         }
     }
 
-    unsafe fn status(&mut self) -> ATAStatus {
+    fn wait_for_ready(&self) -> Result<()> {
+		let mut _loop_counter = 0;
+		loop {
+			let status = self.status();
+			_loop_counter += 1;
+			if status.intersects(ATAStatus::ERROR | ATAStatus::DRIVE_WRITE_FAULT) {
+				return Err(anyhow!("Status intersects ERROR | DRIVE WRITE FAULT"));
+			}
+			if status.intersects(ATAStatus::BUSY) { 
+				if _loop_counter % TIMEOUT == 0 {
+					warn!("AtaBus::wait_for_data_ready() has been busy waiting for a long time... is there a device/driver problem? (status: {:?})", status);
+				}
+				continue;
+			}
+			if status.intersects(ATAStatus::DATA_REQUEST_READY) {
+				return Ok(()); // ready to go!
+			}
+		}
+	}
+
+    fn status(&self) -> ATAStatus {
         self.alt_status.read();
         self.alt_status.read();
         self.alt_status.read();
         self.alt_status.read();
-        ATAStatus::from_bits_truncate(self.error.read())
+        ATAStatus::from_bits_truncate(self.status.read())
     }
 }
 
-const SECTOR_SIZE: usize = 512;
-
-#[derive(Default, Clone, Copy)]
-struct IDEChannelRegisters {
-    base: u8,
-    ctrl: u8,
-    bmide: u8,
-}
 
 
-pub unsafe fn read_boot_sector() -> FatBootSector {
-    let mut buffer = [0u8; SECTOR_SIZE];
-    unsafe {
-        //ata_pio_read_sector(0, &mut buffer);
-    }
 
-    for i in 0..16 {
-        println!("{:02X} ", buffer[i]);
-    }
-
-    unsafe {
-        core::ptr::read(buffer.as_ptr() as *const FatBootSector)
-    }
-}
-
-#[repr(C, packed)]
+#[allow(unused)]
 #[derive(Debug)]
-pub struct FatBootSector {
-    jump_boot: [u8; 3],
-    oem_name: [u8; 8],
-    bytes_per_sector: u16,
-    sector_per_cluster: u8,
-    reserved_sectors: u16,
-    num_fats: u8,
-    max_root_dir_entries: u16,
-    total_sectors_short: u16,
-    media_descriptor: u8,
-    sectors_per_fat: u16,
-    sectors_per_track: u16,
-    num_heads: u16,
-    hidden_sectors: u32,
-    total_sectors_long: u32,
+pub struct DriveIdentity {
+    general_config: u16,
+    model_number: [u8; 20],
+    support_lba48: bool,
+    user_adressable_sectors: u32,
 }
 
-#[repr(C, packed)]
-#[derive(Debug)]
-pub struct DirEntry {
-    name: [u8; 8],
-    ext: [u8; 3],
-    attr: u8,
-    reserved: u8,
-    creation_time_tenths: u8,
-    creation_time: u16,
-    creation_date: u16,
-    last_access_date: u16,
-    first_cluster_high: u16,
-    write_time: u16,
-    write_date: u16,
-    first_cluster_low: u16,
-    file_size: u32,
+impl DriveIdentity {
+    pub fn new(buffer: [u8; SECTOR_SIZE]) -> Self {
+        let general_config = u16::from_le_bytes([buffer[0], buffer[1]]);
+        let model_number = [0; 20];
+        let support_lba48 = get_bit_u16(u16::from_le_bytes([buffer[83], buffer[84]]), 10);
+        let user_adressable_sectors = u32::from_le_bytes([
+            buffer[120], buffer[121], buffer[122], buffer[123]
+        ]);
+        Self { general_config, model_number, user_adressable_sectors, support_lba48 }
+    }
 }
 
-pub fn read_root_directory(boot: &FatBootSector) -> Vec<DirEntry> {
-    let root_dir_sectors = ((boot.max_root_dir_entries as usize * 32) + 511) / 512;
-    let root_start_sector = 
-        boot.reserved_sectors as u32 + 
-        boot.num_fats as u32 * 
-        boot.sectors_per_fat as u32;
 
-    let mut entries = Vec::new();
-    for i in 0..root_dir_sectors {
-        let mut buf = [0u8; SECTOR_SIZE];
-        unsafe {
-            //ata_pio_read_sector(root_start_sector + i as u32, &mut buf); }
-        }
 
-        let entry_count = SECTOR_SIZE / core::mem::size_of::<DirEntry>();
-        let entry_ptr = buf.as_ptr() as *const DirEntry;
-        for j in 0..entry_count {
-            let entry = unsafe { core::ptr::read_unaligned(entry_ptr.add(j)) };
-            if entry.name[0] == 0x00 {
-                break;
+fn get_bit_u16(input: u16, bit: u8) -> bool {
+    (input >> bit) & 0x1 == 1
+}
+
+
+
+
+pub fn test_ata_read(ata: &ATABus) {
+    let mut buf = [0u8; SECTOR_SIZE];
+    let result = ata.read(&mut buf, BusDrive::Master, 0, 1);
+
+    match result {
+        Ok(1) => {
+            let signature = u16::from_le_bytes([buf[510], buf[511]]);
+            if signature == 0xAA55 {
+                println!("ATA PIO read success: Valid MBR signature found (0xAA55)");
+            } else {
+                panic!("ATA read failed: Invalid signature {:#X}", signature);
             }
-            entries.push(entry);
         }
+        Ok(n) => println!("ATA read returned unexpected sector count: {}", n),
+        Err(_) => panic!("ATA read failed: read_pio() returned Err"),
     }
-
-    entries
 }
+

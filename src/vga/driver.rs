@@ -18,13 +18,18 @@ pub struct VGADriver {
     buffer: &'static mut VGABuffer
 }
 
+#[allow(unused)]
 impl VGADriver {
     pub fn new() -> Self {
         VGADriver {
             column_position: 0,
-            color_code: ColorCode::new(Color::Black, Color::Yellow),
+            color_code: ColorCode::new(Color::Black, Color::Red),
             buffer: unsafe { &mut *(0xb8000 as *mut VGABuffer) },
         }
+    }
+
+    pub fn set_color(&mut self, color_code: ColorCode) {
+        self.color_code = color_code;
     }
 
     pub fn write_byte(&mut self, byte: u8) {
