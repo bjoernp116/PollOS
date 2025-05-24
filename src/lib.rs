@@ -16,6 +16,7 @@ pub mod gdt;
 pub mod memory;
 pub mod syscall;
 pub mod file_system;
+pub mod utils;
 
 pub trait Testable {
     fn run(&self) -> ();

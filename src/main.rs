@@ -27,11 +27,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     init_heap(&mut mapper, &mut frame_allocator).expect("heap init failed!");
 
     let ata = ATABus::new(0x1f0, 0x3f6);
-    let fat = FAT16::new(&ata, BusDrive::Slave).expect("Fat init failed!");
-    fat.parse_root_dir();
-    
+    let fs: FileSystem<'_, FAT16> = FileSystem::new(&ata, BusDrive::Slave).expect("Fat init failed!");
+    let root = fs.root().expect("Expected root!");
+    serial_println!("{:#?}", root);
 
-    println!("Done");
     hlt_loop();
 }
 

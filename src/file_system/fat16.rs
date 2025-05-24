@@ -1,8 +1,12 @@
-use core::fmt::Display;
 
-use crate::{print, println, serial_print};
+use core::fmt::{Debug, Display};
 
-use super::{ATABus, BusDrive, StorageFormat, SECTOR_SIZE};
+use alloc::{format, string::String, vec::Vec};
+
+use crate::{print, println, serial_print, utils::DoubleVecIndex};
+
+use super::{ATABus, BusDrive, Directory, StorageFormat, SECTOR_SIZE};
+use anyhow::anyhow;
 
 
 
@@ -23,6 +27,8 @@ pub struct BootSector {
     fat_size_sectors: u16,
 }
 
+#[derive(Debug, Clone)]
+#[repr(C, packed)]
 pub struct DirEntry {
     name: [u8; 8],
     ext: [u8; 3],
@@ -33,6 +39,34 @@ pub struct DirEntry {
     start_cluster: u16,
     file_size: u16,
 }
+impl DirEntry {
+    pub fn name(&self) -> String {
+        self.name.iter()
+            .take_while(|&&byte| byte != 0x20)
+            .map(|&byte| byte as char)
+            .collect()
+    }
+    pub fn ext(&self) -> String {
+        self.ext.iter()
+            .filter(|&&byte| byte != 0x20)
+            .map(|&byte| byte as char)
+            .collect()
+    }
+    pub fn identifier(&self) -> String {
+        format!("{}.{}", self.name(), self.ext())
+    }
+    pub fn is_dir(&self) -> bool {
+        self.file_size == 0 && self.ext[0] + self.ext[1] + self.ext[2] == 0
+    }
+}
+
+impl From<DirEntry> for String {
+    fn from(entry: DirEntry) -> Self {
+        entry.name()
+    }
+}
+
+
 
 pub struct FAT16<'a> {
     ata: &'a ATABus,
@@ -41,30 +75,36 @@ pub struct FAT16<'a> {
 }
 
 impl<'a> FAT16<'a> {
-    pub fn new(ata: &'a ATABus, drive: BusDrive) -> Option<Self> {
-        let mut buf = [0u8; SECTOR_SIZE];
-        ata.read(&mut buf, drive, 0, 1).ok()?;
-        let bs: BootSector = unsafe { core::ptr::read(buf.as_ptr() as *const BootSector) };
-        Some(Self {
-            ata,
-            drive,
-            boot_sector: bs
-        })
-    }
-    pub fn parse_root_dir(&self) -> Option<()> {
+    pub fn parse_root_dir(&self) -> Option<Vec<DirEntry>> {
         let (root_sector, root_sectors) = self.boot_sector.calculate_root_dir_offset();
         let mut buf = [0u8; SECTOR_SIZE];
         self.ata.read(&mut buf, self.drive, root_sector, 1).ok()?;
-        print_buffer(&buf);
-
-
-        Some(())
+        let mut out: Vec<DirEntry> = Vec::new();
+        for chunk in buf.chunks_exact(32) {
+            let de = unsafe { core::ptr::read(chunk.as_ptr() as *const DirEntry)};
+            if de.name[0] == 0x00 { break; } // End
+            if de.name[0] == 0xE5 { continue; } // Entry Deleted
+            out.push(de);
+        }
+        Some(out)
+    }
+    pub fn get_children(&self, entry: &DirEntry) -> Vec<DirEntry> {
+       todo!() 
+    }
+    fn convert_entries(&self, entry: &DirEntry) -> Directory<'a> {
+        let children = self.get_children(entry);
+        Directory {
+            contents: DoubleVecIndex::new(children),
+            files: Vec::new(),
+            name: entry.name(),
+            directories: Vec::new()
+        }
     }
 } 
 
 
 impl BootSector {
-    fn flip_endianess(&mut self) {
+    fn _flip_endianess(&mut self) {
         self._jump = [
             u8::from_le(self._jump[0]), 
             u8::from_le(self._jump[1]), 
@@ -101,7 +141,28 @@ impl BootSector {
 }
 
 
-impl<'a> StorageFormat for FAT16<'a> {
+impl<'a> StorageFormat<'a> for FAT16<'a> {
+    fn new(ata: &'a ATABus, drive: BusDrive) -> anyhow::Result<Self> {
+        let mut buf = [0u8; SECTOR_SIZE];
+        ata.read(&mut buf, drive, 0, 1)?;
+        let bs: BootSector = unsafe { core::ptr::read(buf.as_ptr() as *const BootSector) };
+        Ok(
+            Self {
+                ata,
+                drive,
+                boot_sector: bs,
+            }
+        )
+    }
+    fn get_root(&self) -> anyhow::Result<Directory> {
+        let entries = self.parse_root_dir().ok_or(anyhow!("Could'nt parse root!"))?;
+        Ok(Directory {
+            contents: DoubleVecIndex::new(entries),
+            files: Vec::new(),
+            directories: Vec::new(),
+            name: String::from(""),
+        })
+    }
     fn boot_sector(&self) -> BootSector {
         self.boot_sector.clone()
     }
@@ -111,5 +172,33 @@ fn print_buffer(buffer: &[u8; SECTOR_SIZE]) {
     for (i, byte) in buffer.iter().enumerate() {
         if i % 16 == 0 { print!("\n{:04x}: ", i); }
         print!("{:02x} ", byte);
+    }
+    println!();
+    for (i, byte) in buffer.iter().enumerate() {
+        if i % 16 == 0 { serial_print!("\n{:04x}: ", i); }
+        serial_print!("{:02x} ", byte);
+    }
+    println!();
+}
+
+
+
+pub struct Format83(String, String);
+
+impl Format83 {
+    fn new(entry: &DirEntry) -> Self {
+        Self(entry.name(), entry.identifier())
+    }
+}
+
+impl Display for Format83 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Debug for Format83 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}.{}", self.0, self.1)
     }
 }
