@@ -4,12 +4,12 @@ use alloc::vec::Vec;
 
 
 #[derive(Debug)]
-pub struct DoubleVecIndex<K, V> {
+pub struct DoubleVecIndex<K: Eq + Clone, V: Clone + Into<K>> {
     values: Vec<V>,
     keys: Vec<K>
 }
 
-impl<K: From<V> + Eq, V: Clone> DoubleVecIndex<K, V> {
+impl<K: Eq + Clone, V: Clone + Into<K>> DoubleVecIndex<K, V> {
     pub fn new(values: Vec<V>) -> Self {
         let mut keys = Vec::new();
         for value in values.clone() {
@@ -24,9 +24,13 @@ impl<K: From<V> + Eq, V: Clone> DoubleVecIndex<K, V> {
         for (i, k) in self.keys.iter().enumerate() {
             if key == *k {
                 self.keys.remove(i);
-                return Some(self.values.remove(i));
+                let out = self.values.remove(i);
+                return Some(out);
             }
         }
         None
+    }
+    pub fn keys(&self) -> Vec<K> {
+        self.keys.clone()
     }
 }
