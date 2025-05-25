@@ -1,7 +1,7 @@
 
 use core::fmt::{Debug, Display};
 
-use alloc::{boxed::Box, format, string::String, vec::Vec};
+use alloc::{borrow::ToOwned, boxed::Box, format, string::String, vec::Vec};
 
 use crate::{print, println, serial_print, utils::DoubleVecIndex};
 
@@ -42,20 +42,15 @@ pub struct DirEntry {
 }
 
 impl DirEntry {
-    pub fn name(&self) -> String {
-        self.name.iter()
-            .take_while(|&&byte| byte != 0x20)
-            .map(|&byte| byte as char)
-            .collect()
-    }
-    pub fn ext(&self) -> String {
-        self.ext.iter()
-            .filter(|&&byte| byte != 0x20)
-            .map(|&byte| byte as char)
-            .collect()
-    }
-    pub fn identifier(&self) -> String {
-        format!("{}.{}", self.name(), self.ext())
+    pub fn name(&self) -> Format83 {
+        let name = core::str::from_utf8(&self.name).unwrap().trim_end();
+        let ext = core::str::from_utf8(&self.ext).unwrap().trim_end();
+        let ext = if ext.len() == 0 {
+            None
+        } else {
+            Some(ext.to_owned())
+        };
+        Format83(name.to_owned(), ext) 
     }
     pub fn timestamp(&self) -> TimeStamp {
         let second =      (0b11111_000000_00000 & self.time) as u8 * 2;
@@ -68,7 +63,7 @@ impl DirEntry {
     }
 }
 
-impl From<DirEntry> for String {
+impl From<DirEntry> for Format83 {
     fn from(entry: DirEntry) -> Self {
         entry.name()
     }
@@ -77,7 +72,7 @@ impl From<DirEntry> for String {
 impl Display for DirEntry {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let size = self.file_size;
-        writeln!(f, "Name: {:?}\nExt: {:?}", self.name(), self.ext())?;
+        writeln!(f, "Name: {:?}\nExt: {:?}", self.name().0, self.name().1)?;
         writeln!(f, "Timestamp: {}, size: {}", self.timestamp(), size)?;
         Ok(())
     }
@@ -180,14 +175,14 @@ impl<'a> StorageFormat<'a> for FAT16<'a> {
             contents: DoubleVecIndex::new(entries),
             files: Vec::new(),
             directories: Vec::new(),
-            name: String::from("ROOT"),
+            name: Format83::new("ROOT".to_owned(), None), 
             time_stamp: TimeStamp::default()
         })
     }
     fn boot_sector(&self) -> BootSector {
         self.boot_sector.clone()
     }
-    fn load_child(&self, child: String, directory: &mut Directory<DirEntry>) -> anyhow::Result<()> {
+    fn load_child(&self, child: Format83, directory: &mut Directory<DirEntry>) -> anyhow::Result<()> {
         let entry = directory.take(child.clone())
             .ok_or(anyhow!("Entry {} does not exist!", child))?;
         if Self::is_directory(&entry) {
@@ -202,10 +197,10 @@ impl<'a> StorageFormat<'a> for FAT16<'a> {
             directory.directories.push(Box::new(dir));
         } else {
             let file = File {
-                name: Format83::new(&entry),
                 start_sector: entry.start_cluster as u32,
                 size: entry.file_size as u32,
-                time_stamp: entry.timestamp()
+                time_stamp: entry.timestamp(),
+                name: Format83::from(entry),
             };
             directory.files.push(file);
         }
@@ -232,22 +227,34 @@ fn print_buffer(buffer: &[u8; SECTOR_SIZE]) {
 
 
 
-pub struct Format83(String, String);
+#[derive(Clone)]
+pub struct Format83(String, Option<String>);
 
 impl Format83 {
-    fn new(entry: &DirEntry) -> Self {
-        Self(entry.name(), entry.ext())
+    pub fn new(name: String, ext: Option<String>) -> Self {
+        Self(name, ext)
     }
 }
 
+
 impl Display for Format83 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.0)
+        match self.1.clone() {
+            Some(ext) => write!(f, "{}.{}", self.0, ext),
+            None => write!(f, "{}/", self.0)
+        }
     }
 }
 
 impl Debug for Format83 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}.{}", self.0, self.1)
+        write!(f, "{}", self)
     }
+}
+
+impl core::hash::Hash for Format83 {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+        self.1.hash(state);
+    } 
 }

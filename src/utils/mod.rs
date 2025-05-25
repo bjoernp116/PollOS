@@ -1,15 +1,17 @@
+use core::hash::SipHasher;
+
 use alloc::vec::Vec;
 
 
 
 
 #[derive(Debug)]
-pub struct DoubleVecIndex<K: Eq + Clone, V: Clone + Into<K>> {
+pub struct DoubleVecIndex<K: core::hash::Hash + Clone, V: Clone + Into<K>> {
     values: Vec<V>,
     keys: Vec<K>
 }
 
-impl<K: Eq + Clone, V: Clone + Into<K>> DoubleVecIndex<K, V> {
+impl<K: core::hash::Hash + Clone, V: Clone + Into<K>> DoubleVecIndex<K, V> {
     pub fn new(values: Vec<V>) -> Self {
         let mut keys = Vec::new();
         for value in values.clone() {
@@ -20,9 +22,9 @@ impl<K: Eq + Clone, V: Clone + Into<K>> DoubleVecIndex<K, V> {
             keys,
         }
     }
-    pub fn take(&mut self, key: K) -> Option<V> {
+    pub fn take(&mut self, key: K, hasher: &mut SipHasher) -> Option<V> {
         for (i, k) in self.keys.iter().enumerate() {
-            if key == *k {
+            if key.hash(hasher) == k.hash(hasher) {
                 self.keys.remove(i);
                 let out = self.values.remove(i);
                 return Some(out);

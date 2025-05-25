@@ -6,9 +6,9 @@
 #![no_main] // disable all Rust-level entry points
 
 use core::panic::PanicInfo;
-use alloc::string::String;
+use alloc::{borrow::ToOwned, string::String};
 use bootloader::{entry_point, BootInfo};
-use pollos::{file_system::{fat16::FAT16, ATABus, BusDrive, Directory, FileSystem}, memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
+use pollos::{file_system::{fat16::{Format83, FAT16}, ATABus, BusDrive, Directory, FileSystem}, memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
 use x86_64::VirtAddr;
 
 extern crate alloc;
@@ -30,8 +30,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let ata = ATABus::new(0x1f0, 0x3f6);
     let fs: FileSystem<'_, FAT16> = FileSystem::new(&ata, BusDrive::Slave).expect("Fat init failed!");
     let mut root: Directory<_> = fs.root().expect("Expected root!");
-    println!("{}", root);
-    fs.load(String::from("HELLO"), &mut root).expect("ERROR");
+    serial_println!("{}", root);
+    fs.load(Format83::new("HELLO".to_owned(), None), &mut root).expect("ERROR");
     println!("{}", root);
     println!("{}", root.files[0]);
 

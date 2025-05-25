@@ -1,5 +1,5 @@
 
-use core::{fmt::Display, marker::PhantomData};
+use core::{fmt::Display, hash::SipHasher, marker::PhantomData};
 
 use alloc::{boxed::Box, string::String, vec::Vec};
 use fat16::{BootSector, Format83};
@@ -26,14 +26,14 @@ pub struct File {
 pub struct Directory<T: StorageEntry> {
     pub files: Vec<File>,
     pub directories: Vec<Box<Directory<T>>>,
-    contents: DoubleVecIndex<String, T>,
-    name: String,
+    contents: DoubleVecIndex<Format83, T>,
+    name: Format83,
     time_stamp: TimeStamp,
 }
 
 impl<T: StorageEntry> Directory<T> {
-    pub fn take(&mut self, key: String) -> Option<T> {
-        self.contents.take(key)
+    pub fn take(&mut self, key: Format83) -> Option<T> {
+        self.contents.take(key, &mut SipHasher::new())
     }
 }
 
@@ -53,7 +53,7 @@ impl<'a, T: StorageFormat<'a>> FileSystem<'a, T> {
     pub fn root(&'a self) -> anyhow::Result<Directory<T::Entry>> {
         self.storage_format.get_root()
     }
-    pub fn load(&self, child: String, directory: &mut Directory<T::Entry>) -> anyhow::Result<()> {
+    pub fn load(&self, child: Format83, directory: &mut Directory<T::Entry>) -> anyhow::Result<()> {
         self.storage_format.load_child(child, directory)
     }
 }
@@ -63,11 +63,11 @@ pub trait StorageFormat<'a>: Sized {
     fn new(ata_bus: &'a ATABus, drive: BusDrive) -> anyhow::Result<Self>;
     fn boot_sector(&self) -> BootSector;
     fn get_root(&self) -> anyhow::Result<Directory<Self::Entry>>;
-    fn load_child(&self, child: String, directory: &mut Directory<Self::Entry>) -> anyhow::Result<()>;
+    fn load_child(&self, child: Format83, directory: &mut Directory<Self::Entry>) -> anyhow::Result<()>;
     fn is_directory(entry: &Self::Entry) -> bool;
 }
 
-pub trait StorageEntry: Display + Into<String> + Clone {}
+pub trait StorageEntry: Display + Into<Format83> + Clone {}
 
 #[derive(Default, Debug)]
 pub struct TimeStamp {
