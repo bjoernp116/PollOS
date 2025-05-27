@@ -106,7 +106,7 @@ extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, 
 }
 #[allow(unused)]
 extern "x86-interrupt" fn segment_not_present_handler(stack_frame: InterruptStackFrame, err_code: u64) {
-    //println!("EXCEPTION: SEGMENT NOT PRESENT\n{:#?}\nERR_CODE: {}", stack_frame, err_code); 
+
 }
 extern "x86-interrupt" fn stack_segment_handler(stack_frame: InterruptStackFrame, err_code: u64) {
     panic!("EXCEPTION: STACK SEGMENT FAULT\n{:#?}\nERR_CODE: {}", stack_frame, err_code); 
@@ -206,8 +206,6 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(
             }
         }
     }
-
-    //print!("{}", scancode);
 
     unsafe {
         PICS.lock()

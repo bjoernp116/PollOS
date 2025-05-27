@@ -1,7 +1,7 @@
 
 use core::{fmt::Display, hash::SipHasher, marker::PhantomData};
 
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use fat16::{BootSector, Format83};
 
 use crate::utils::DoubleVecIndex;
@@ -95,7 +95,7 @@ impl Display for TimeStamp {
 impl<T: StorageEntry> Display for Directory<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let file_names: Vec<&Format83> = self.files.iter().map(|f| &f.name).collect();
-        let dir_names: Vec<&Format83> = self.files.iter().map(|d| &d.name).collect();
+        let dir_names: Vec<&Format83> = self.directories.iter().map(|d| &d.name).collect();
         writeln!(f, "Directory: {}", self.name)?;
         writeln!(f, "\tUnloaded: {:?}", self.contents.keys())?;
         writeln!(f, "\tFiles: {:?}", file_names)?;
@@ -114,6 +114,9 @@ impl Display for File {
     }
 }
 
+pub struct Name {
+    
+}
 
 
 

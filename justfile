@@ -5,9 +5,7 @@ generate_disk:
     dd if=/dev/zero of=disk.img bs=512 count=32768
     mkfs.fat -F 16 disk.img
     sudo mount -o loop,uid=$(id -u),gid=$(id -g) disk.img /mnt
-    echo "Hello, World!" > /mnt/hello.txt
-    mkdir /mnt/test
-    echo "this is a test folder!" > /mnt/test/test.txt
+    cp -rf userspace/* /mnt
     sudo umount /mnt
 
 build:

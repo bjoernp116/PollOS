@@ -72,6 +72,7 @@ pub extern "C" fn _start() -> ! {
     loop {}
 }
 
+/// Loops a hlt instruction
 pub fn hlt_loop() -> ! {
     loop {
         x86_64::instructions::hlt();

@@ -1,14 +1,28 @@
 
 use core::fmt::{Debug, Display};
 
-use alloc::{borrow::ToOwned, boxed::Box, format, string::String, vec::Vec};
+use alloc::{borrow::ToOwned, boxed::Box, string::String, vec::Vec};
 
-use crate::{print, println, serial_print, utils::DoubleVecIndex};
+use crate::{print, println, serial_print, serial_println, utils::DoubleVecIndex};
 
 use super::{ATABus, BusDrive, Directory, File, StorageEntry, StorageFormat, TimeStamp, SECTOR_SIZE};
 use anyhow::anyhow;
 
 
+bitflags::bitflags! {
+    #[derive(Debug, Clone)]
+    pub struct FatAttributes: u8 {
+        const READ_ONLY = 0x01;
+        const HIDDEN = 0x02;
+        const SYSTEM = 0x04;
+        const VOLUME_ID = 0x08;
+        const DIRECTORY = 0x10;
+        const ARCHIVE = 0x20;
+        const DEVICE = 0x40;
+        const RESERVED = 0x80;
+        const LONG_FILE_NAME = 0b00001111;
+    }
+}
 
 
 #[allow(unused)]
@@ -28,6 +42,7 @@ pub struct BootSector {
 }
 
 
+/// Directory Entry, Size: 
 #[derive(Debug, Clone)]
 #[repr(C, packed)]
 pub struct DirEntry {
@@ -38,8 +53,9 @@ pub struct DirEntry {
     time: u16,
     date: u16,
     start_cluster: u16,
-    file_size: u16,
+    file_size: u32,
 }
+
 
 impl DirEntry {
     pub fn name(&self) -> Format83 {
@@ -74,6 +90,7 @@ impl Display for DirEntry {
         let size = self.file_size;
         writeln!(f, "Name: {:?}\nExt: {:?}", self.name().0, self.name().1)?;
         writeln!(f, "Timestamp: {}, size: {}", self.timestamp(), size)?;
+        writeln!(f, "Attributes: {:?}", FatAttributes::from_bits(self.attributes))?;
         Ok(())
     }
 }
@@ -90,6 +107,7 @@ impl<'a> FAT16<'a> {
     pub fn parse_root_dir(&self) -> Option<Vec<DirEntry>> {
         let (root_sector, _root_sectors) = self.boot_sector.calculate_root_dir_offset();
         let mut buf = [0u8; SECTOR_SIZE];
+        println!("Reading: drive: {:?}, sector: {}", self.drive, root_sector);
         self.ata.read(&mut buf, self.drive, root_sector, 1).ok()?;
         let mut out: Vec<DirEntry> = Vec::new();
         for chunk in buf.chunks_exact(32) {
@@ -171,6 +189,9 @@ impl<'a> StorageFormat<'a> for FAT16<'a> {
     }
     fn get_root(&self) -> anyhow::Result<Directory<DirEntry>> {
         let entries = self.parse_root_dir().ok_or(anyhow!("Could'nt parse root!"))?;
+        for entry in &entries {
+            serial_println!("{}", entry);
+        }
         Ok(Directory {
             contents: DoubleVecIndex::new(entries),
             files: Vec::new(),
@@ -207,7 +228,7 @@ impl<'a> StorageFormat<'a> for FAT16<'a> {
         Ok(())
     }
     fn is_directory(entry: &DirEntry) -> bool {
-        entry.file_size == 0 && entry.ext[0] + entry.ext[1] + entry.ext[2] == 0
+        FatAttributes::from_bits_retain(entry.attributes).intersects(FatAttributes::DIRECTORY)
     }
 }
 

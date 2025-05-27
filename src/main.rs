@@ -2,11 +2,12 @@
 #![test_runner(pollos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![feature(asm_experimental_arch)]
+
 #![no_std] // don't link the Rust standard library
 #![no_main] // disable all Rust-level entry points
 
 use core::panic::PanicInfo;
-use alloc::{borrow::ToOwned, string::String};
+use alloc::borrow::ToOwned;
 use bootloader::{entry_point, BootInfo};
 use pollos::{file_system::{fat16::{Format83, FAT16}, ATABus, BusDrive, Directory, FileSystem}, memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
 use x86_64::VirtAddr;
@@ -15,6 +16,7 @@ extern crate alloc;
 
 entry_point!(kernel_main);
 
+/// Kernel Entry Point
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("Hello, World!");
     pollos::init();
@@ -31,9 +33,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let fs: FileSystem<'_, FAT16> = FileSystem::new(&ata, BusDrive::Slave).expect("Fat init failed!");
     let mut root: Directory<_> = fs.root().expect("Expected root!");
     serial_println!("{}", root);
-    fs.load(Format83::new("HELLO".to_owned(), None), &mut root).expect("ERROR");
+    fs.load(Format83::new("At\0e\0s\0t".to_owned(), None), &mut root).unwrap();
     println!("{}", root);
-    println!("{}", root.files[0]);
 
     hlt_loop();
 }
@@ -53,4 +54,3 @@ fn panic(info: &PanicInfo) -> ! {
     serial_println!("{}", info);
     hlt_loop();
 }
-
