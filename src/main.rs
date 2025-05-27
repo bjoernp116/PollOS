@@ -32,9 +32,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let ata = ATABus::new(0x1f0, 0x3f6);
     let fs: FileSystem<'_, FAT16> = FileSystem::new(&ata, BusDrive::Slave).expect("Fat init failed!");
     let mut root: Directory<_> = fs.root().expect("Expected root!");
-    serial_println!("{}", root);
-    fs.load(Format83::new("At\0e\0s\0t".to_owned(), None), &mut root).unwrap();
-    println!("{}", root);
+    fs.load_directory("folder".to_owned(), &mut root).unwrap();
+    let mut folder = &mut root.directories[0];
+    fs.load_directory("..".to_owned(), &mut folder).unwrap();
+    println!("{}", folder.directories[0]);
 
     hlt_loop();
 }

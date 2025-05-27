@@ -45,7 +45,20 @@
 | 26 | 2 | This entry's first cluster number | 
 | 28 | 4 | File size in bytes | 
 
-If attributes == 0x0F the entry uses LFN (Long File Name)
+**Long File Name**
+If attributes == 0x0F the entry uses LFN (Long File Name). 
+
+| Offset | Size | Usage |
+|:------:|:----:|:------|
+| 0 | 1 | Order of this entry in the sequence of file name entries |
+| 1 | 10 | The first 5 charachters of the name (char = 2 bytes) |
+| 11 | 1 | Attribute. Always 0x0F if LFN is used |
+| 12 | 1 | Long entry type. Zero for name entries. |
+| 13 | 1 | Checksum |
+| 14 | 12 | The next 6 charachters | 
+| 26 | 2 | Always zero |
+| 28 | 4 | The final 2 charachters | 
+
 
 
 
