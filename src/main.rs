@@ -2,14 +2,18 @@
 #![test_runner(pollos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![feature(asm_experimental_arch)]
-
-#![no_std] // don't link the Rust standard library
+#![no_std]
+// don't link the Rust standard library
 #![no_main] // disable all Rust-level entry points
 
-use core::panic::PanicInfo;
 use alloc::borrow::ToOwned;
 use bootloader::{entry_point, BootInfo};
-use pollos::{file_system::{fat16::{Format83, FAT16}, ATABus, BusDrive, Directory, FileSystem}, memory::{allocator::BootInfoFrameAllocator, init_heap}, *};
+use core::panic::PanicInfo;
+use pollos::{
+    file_system::{fat16::FAT16, ATABus, BusDrive, Directory, FileSystem},
+    memory::{allocator::BootInfoFrameAllocator, init_heap},
+    *,
+};
 use x86_64::VirtAddr;
 
 extern crate alloc;
@@ -21,21 +25,20 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("Hello, World!");
     pollos::init();
 
-
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
-    let mut frame_allocator = unsafe { 
-        BootInfoFrameAllocator::new(&boot_info.memory_map)
-    };
+    let mut frame_allocator =
+        unsafe { BootInfoFrameAllocator::new(&boot_info.memory_map) };
     init_heap(&mut mapper, &mut frame_allocator).expect("heap init failed!");
 
     let ata = ATABus::new(0x1f0, 0x3f6);
-    let fs: FileSystem<'_, FAT16> = FileSystem::new(&ata, BusDrive::Slave).expect("Fat init failed!");
+    let fs: FileSystem<'_, FAT16> =
+        FileSystem::new(&ata, BusDrive::Slave).expect("Fat init failed!");
+
     let mut root: Directory<_> = fs.root().expect("Expected root!");
-    fs.load_directory("folder".to_owned(), &mut root).unwrap();
-    let mut folder = &mut root.directories[0];
-    fs.load_directory("..".to_owned(), &mut folder).unwrap();
-    println!("{}", folder.directories[0]);
+    fs.load_file("test1.txt".to_owned(), &mut root).unwrap();
+    let file = &root.files[0];
+    let file_contents = fs.get_content(file);
 
     hlt_loop();
 }
@@ -46,7 +49,6 @@ fn trivial_assertion() {
     assert_eq!(1, 1);
     println!("[ok]");
 }
-
 
 /// This function is called on panic.
 #[panic_handler]

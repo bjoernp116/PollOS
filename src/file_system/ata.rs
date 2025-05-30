@@ -5,8 +5,8 @@ use anyhow::anyhow;
 
 use bitflags::bitflags;
 
-use crate::{println, warn};
 use crate::serial_println;
+use crate::{println, warn};
 
 use super::SECTOR_SIZE;
 
@@ -43,21 +43,20 @@ enum ATACommand {
     Identify = 0xEC,
 }
 
-
 #[allow(unused)]
 #[derive(Debug)]
 pub struct ATABus {
-    data: PortRW<u16>,              // BAR0 + 0
+    data: PortRW<u16>,          // BAR0 + 0
     error: PortReader<u8>,      // BAR0 + 1
-    sector_count: PortRW<u8>,       // BAR0 + 2
-    lba_low: PortRW<u8>,            // BAR0 + 3
-    lba_mid: PortRW<u8>,            // BAR0 + 4
-    lba_high: PortRW<u8>,           // BAR0 + 5
-    drive_select: PortRW<u8>,       // BAR0 + 6
-    command: PortWriter<u8>,   // BAR0 + 7
+    sector_count: PortRW<u8>,   // BAR0 + 2
+    lba_low: PortRW<u8>,        // BAR0 + 3
+    lba_mid: PortRW<u8>,        // BAR0 + 4
+    lba_high: PortRW<u8>,       // BAR0 + 5
+    drive_select: PortRW<u8>,   // BAR0 + 6
+    command: PortWriter<u8>,    // BAR0 + 7
     status: PortReader<u8>,     // BAR0 + 7
     alt_status: PortReader<u8>, // BAR1 + 2
-    control: PortWriter<u8>,   // BAR1 + 2
+    control: PortWriter<u8>,    // BAR1 + 2
 }
 
 impl ATABus {
@@ -96,8 +95,8 @@ impl ATABus {
         self.wait_for_done()?;
 
         if using_lba_28 {
-            self.drive_select.write(
-                0xE0 | (which as u8) | ((lba_start >> 24) as u8 & 0x0F));
+            self.drive_select
+                .write(0xE0 | (which as u8) | ((lba_start >> 24) as u8 & 0x0F));
             self.sector_count.write(sector_count as u8);
             self.lba_high.write((lba_start >> 16) as u8);
             self.lba_mid.write((lba_start >> 8) as u8);
@@ -106,10 +105,10 @@ impl ATABus {
         }
 
         let mut buffer_offset = 0;
-        for _lba in lba_start .. (lba_start + sector_count) {
+        for _lba in lba_start..(lba_start + sector_count) {
             self.wait_for_ready()?;
 
-            let range = buffer_offset .. (buffer_offset + SECTOR_SIZE);
+            let range = buffer_offset..(buffer_offset + SECTOR_SIZE);
             for chunk in buffer[range].chunks_exact_mut(2) {
                 let word: u16 = self.data.read();
                 chunk[0] = word as u8;
@@ -155,17 +154,22 @@ impl ATABus {
         Ok(DriveIdentity::new(buffer))
     }
 
-
     fn wait_for_done(&self) -> Result<()> {
         let mut timeout = 0;
         loop {
             let status = self.status();
             timeout += 1;
-            if status.intersects(ATAStatus::ERROR | ATAStatus::DRIVE_WRITE_FAULT) {
-                return Err(anyhow!("Status intersects ERROR | DRIVE WRITE FAULT"))
+            if status
+                .intersects(ATAStatus::ERROR | ATAStatus::DRIVE_WRITE_FAULT)
+            {
+                return Err(anyhow!(
+                    "Status intersects ERROR | DRIVE WRITE FAULT"
+                ));
             }
             if status.intersects(ATAStatus::BUSY) && timeout == TIMEOUT {
-                serial_println!("ATA Driver has been looping for 1 million iterations!");
+                serial_println!(
+                    "ATA Driver has been looping for 1 million iterations!"
+                );
             }
             if !status.intersects(ATAStatus::DATA_REQUEST_READY) {
                 return Ok(());
@@ -174,24 +178,28 @@ impl ATABus {
     }
 
     fn wait_for_ready(&self) -> Result<()> {
-		let mut _loop_counter = 0;
-		loop {
-			let status = self.status();
-			_loop_counter += 1;
-			if status.intersects(ATAStatus::ERROR | ATAStatus::DRIVE_WRITE_FAULT) {
-				return Err(anyhow!("Status intersects ERROR | DRIVE WRITE FAULT"));
-			}
-			if status.intersects(ATAStatus::BUSY) { 
-				if _loop_counter % TIMEOUT == 0 {
-					warn!("AtaBus::wait_for_data_ready() has been busy waiting for a long time... is there a device/driver problem? (status: {:?})", status);
-				}
-				continue;
-			}
-			if status.intersects(ATAStatus::DATA_REQUEST_READY) {
-				return Ok(()); // ready to go!
-			}
-		}
-	}
+        let mut _loop_counter = 0;
+        loop {
+            let status = self.status();
+            _loop_counter += 1;
+            if status
+                .intersects(ATAStatus::ERROR | ATAStatus::DRIVE_WRITE_FAULT)
+            {
+                return Err(anyhow!(
+                    "Status intersects ERROR | DRIVE WRITE FAULT"
+                ));
+            }
+            if status.intersects(ATAStatus::BUSY) {
+                if _loop_counter % TIMEOUT == 0 {
+                    warn!("AtaBus::wait_for_data_ready() has been busy waiting for a long time... is there a device/driver problem? (status: {:?})", status);
+                }
+                continue;
+            }
+            if status.intersects(ATAStatus::DATA_REQUEST_READY) {
+                return Ok(()); // ready to go!
+            }
+        }
+    }
 
     fn status(&self) -> ATAStatus {
         self.alt_status.read();
@@ -201,9 +209,6 @@ impl ATABus {
         ATAStatus::from_bits_truncate(self.status.read())
     }
 }
-
-
-
 
 #[allow(unused)]
 #[derive(Debug)]
@@ -218,22 +223,26 @@ impl DriveIdentity {
     pub fn new(buffer: [u8; SECTOR_SIZE]) -> Self {
         let general_config = u16::from_le_bytes([buffer[0], buffer[1]]);
         let model_number = [0; 20];
-        let support_lba48 = get_bit_u16(u16::from_le_bytes([buffer[83], buffer[84]]), 10);
+        let support_lba48 =
+            get_bit_u16(u16::from_le_bytes([buffer[83], buffer[84]]), 10);
         let user_adressable_sectors = u32::from_le_bytes([
-            buffer[120], buffer[121], buffer[122], buffer[123]
+            buffer[120],
+            buffer[121],
+            buffer[122],
+            buffer[123],
         ]);
-        Self { general_config, model_number, user_adressable_sectors, support_lba48 }
+        Self {
+            general_config,
+            model_number,
+            user_adressable_sectors,
+            support_lba48,
+        }
     }
 }
-
-
 
 fn get_bit_u16(input: u16, bit: u8) -> bool {
     (input >> bit) & 0x1 == 1
 }
-
-
-
 
 pub fn test_ata_read(ata: &ATABus) {
     let mut buf = [0u8; SECTOR_SIZE];
@@ -243,7 +252,9 @@ pub fn test_ata_read(ata: &ATABus) {
         Ok(1) => {
             let signature = u16::from_le_bytes([buf[510], buf[511]]);
             if signature == 0xAA55 {
-                println!("ATA PIO read success: Valid MBR signature found (0xAA55)");
+                println!(
+                    "ATA PIO read success: Valid MBR signature found (0xAA55)"
+                );
             } else {
                 panic!("ATA read failed: Invalid signature {:#X}", signature);
             }
@@ -252,4 +263,3 @@ pub fn test_ata_read(ata: &ATABus) {
         Err(_) => panic!("ATA read failed: read_pio() returned Err"),
     }
 }
-

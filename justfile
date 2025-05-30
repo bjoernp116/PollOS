@@ -9,6 +9,8 @@ generate_disk:
     sudo umount /mnt
 
 build:
+    @cargo fix --allow-dirty
+    @cargo fmt --all
     @cargo build && cargo bootimage
 
 bochs: build

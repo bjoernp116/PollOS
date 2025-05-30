@@ -1,10 +1,12 @@
-
-use core::{fmt::Display, hash::SipHasher, marker::PhantomData};
+use anyhow::anyhow;
+use core::{fmt::Display, marker::PhantomData};
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use fat16::{BootSector, Format83};
+use fat16::BootSector;
 
-use crate::utils::DoubleVecIndex;
+use crate::{
+    print, println, serial_print, serial_println, utils::DoubleVecIndex,
+};
 
 pub use ata::*;
 pub mod ata;
@@ -13,14 +15,13 @@ pub mod io;
 
 pub const SECTOR_SIZE: usize = 512;
 
-
 #[derive(Debug)]
 pub struct File {
     pub name: String,
     pub ext: String,
-    pub start_sector: u32,
+    pub start_sector: usize,
     pub size: u32,
-    pub time_stamp: TimeStamp
+    pub time_stamp: TimeStamp,
 }
 
 impl File {
@@ -35,18 +36,17 @@ pub struct Directory<T: StorageEntry> {
     pub directories: Vec<Box<Directory<T>>>,
     contents: DoubleVecIndex<String, T>,
     name: String,
-    time_stamp: TimeStamp,
 }
 
 impl<T: StorageEntry> Directory<T> {
     pub fn take(&mut self, key: String) -> Option<T> {
-        self.contents.take(key, &mut SipHasher::new())
+        self.contents.take(key)
     }
 }
 
 pub struct FileSystem<'a, T: StorageFormat<'a>> {
     storage_format: T,
-    _phantom: PhantomData<&'a T>
+    _phantom: PhantomData<&'a T>,
 }
 
 impl<'a, T: StorageFormat<'a>> FileSystem<'a, T> {
@@ -54,14 +54,51 @@ impl<'a, T: StorageFormat<'a>> FileSystem<'a, T> {
         let storage_format = T::new(ata, drive)?;
         Ok(FileSystem {
             storage_format,
-            _phantom: PhantomData
+            _phantom: PhantomData,
         })
+    }
+    pub fn get_from_path(&self, path: String) -> Option<&File> {
+        //let mut dir = self.root();
+        for name in split_path(path) {
+            //dir = self.load_directory(name, dir);
+        }
+        None
     }
     pub fn root(&'a self) -> anyhow::Result<Directory<T::Entry>> {
         self.storage_format.get_root()
     }
-    pub fn load_directory(&self, child: String, directory: &mut Directory<T::Entry>) -> anyhow::Result<()> {
-        self.storage_format.load_child(child, directory)
+    pub fn load_directory(
+        &self,
+        child: String,
+        directory: &mut Directory<T::Entry>,
+    ) -> anyhow::Result<()> {
+        match self.storage_format.load_child(child.clone(), directory) {
+            LoadChildResult::Directory(_) => Ok(()),
+            LoadChildResult::File(_) => {
+                Err(anyhow!("Expected Directory: {}, found file!", child))
+            }
+            LoadChildResult::NotFound => {
+                Err(anyhow!("Directory {} not found!", child))
+            }
+        }
+    }
+    pub fn get_content(&self, file: &File) -> [u8; SECTOR_SIZE] {
+        self.storage_format.get_content(file).unwrap()
+    }
+    pub fn load_file(
+        &self,
+        child: String,
+        directory: &mut Directory<T::Entry>,
+    ) -> anyhow::Result<()> {
+        match self.storage_format.load_child(child.clone(), directory) {
+            LoadChildResult::File(_) => Ok(()),
+            LoadChildResult::Directory(_) => {
+                Err(anyhow!("Expected File: {}, found directory!", child))
+            }
+            LoadChildResult::NotFound => {
+                Err(anyhow!("Directory {} not found!", child))
+            }
+        }
     }
 }
 
@@ -70,8 +107,19 @@ pub trait StorageFormat<'a>: Sized {
     fn new(ata_bus: &'a ATABus, drive: BusDrive) -> anyhow::Result<Self>;
     fn boot_sector(&self) -> BootSector;
     fn get_root(&self) -> anyhow::Result<Directory<Self::Entry>>;
-    fn load_child(&self, child: String, directory: &mut Directory<Self::Entry>) -> anyhow::Result<()>;
+    fn load_child(
+        &self,
+        child: String,
+        directory: &mut Directory<Self::Entry>,
+    ) -> LoadChildResult;
     fn is_directory(entry: &Self::Entry) -> bool;
+    fn get_content(&self, file: &File) -> anyhow::Result<[u8; SECTOR_SIZE]>;
+}
+
+pub enum LoadChildResult {
+    Directory(usize),
+    File(usize),
+    NotFound,
 }
 
 pub trait StorageEntry: Display + Into<String> + Clone {}
@@ -83,12 +131,14 @@ pub struct TimeStamp {
     hour: u8,
     day: u8,
     month: u8,
-    year: u8,
+    year: u16,
 }
 
 impl Display for TimeStamp {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}:{}:{} {}/{}/{}",
+        write!(
+            f,
+            "{}:{}:{} {}/{}/{}",
             self.hour,
             self.minute,
             self.second,
@@ -101,13 +151,14 @@ impl Display for TimeStamp {
 
 impl<T: StorageEntry> Display for Directory<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let file_names: Vec<String> = self.files.iter().map(|f| f.name()).collect();
-        let dir_names: Vec<String> = self.directories.iter().map(|d| d.name.clone()).collect();
+        let file_names: Vec<String> =
+            self.files.iter().map(|f| f.name()).collect();
+        let dir_names: Vec<String> =
+            self.directories.iter().map(|d| d.name.clone()).collect();
         writeln!(f, "Directory: {}", self.name)?;
         writeln!(f, "\tUnloaded: {:?}", self.contents.keys())?;
         writeln!(f, "\tFiles: {:?}", file_names)?;
         writeln!(f, "\tSubdirectories: {:?}", dir_names)?;
-        writeln!(f, "\tTimestamp: {}", self.time_stamp)?;
         Ok(())
     }
 }
@@ -121,5 +172,24 @@ impl Display for File {
     }
 }
 
+#[allow(unused)]
+pub fn print_buffer(buffer: &[u8; SECTOR_SIZE]) {
+    for (i, byte) in buffer.iter().enumerate() {
+        if i % 16 == 0 {
+            print!("\n{:04x}: ", i);
+        }
+        print!("{:02x} ", byte);
+    }
+    println!();
+    for (i, byte) in buffer.iter().enumerate() {
+        if i % 16 == 0 {
+            serial_print!("\n{:04x}: ", i);
+        }
+        serial_print!("{:02x} ", byte);
+    }
+    serial_println!();
+}
 
-
+fn split_path(path: String) -> Vec<String> {
+    path.split('/').map(|n| n.into()).collect()
+}

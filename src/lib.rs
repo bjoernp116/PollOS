@@ -9,14 +9,14 @@ use core::panic::PanicInfo;
 
 extern crate alloc;
 
-pub mod serial;
-pub mod vga;
-pub mod interrupts;
-pub mod gdt;
-pub mod memory;
-pub mod syscall;
 pub mod file_system;
+pub mod gdt;
+pub mod interrupts;
+pub mod memory;
+pub mod serial;
+pub mod syscall;
 pub mod utils;
+pub mod vga;
 
 pub trait Testable {
     fn run(&self) -> ();
@@ -82,7 +82,9 @@ pub fn hlt_loop() -> ! {
 pub fn init() {
     gdt::init();
     interrupts::init();
-    unsafe { interrupts::PICS.lock().initialize(); }
+    unsafe {
+        interrupts::PICS.lock().initialize();
+    }
     x86_64::instructions::interrupts::enable();
 }
 

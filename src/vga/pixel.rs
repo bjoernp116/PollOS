@@ -35,5 +35,3 @@ impl Pixel {
         Pixel(0, ColorCode(0))
     }
 }
-
-

@@ -1,32 +1,36 @@
 #![allow(private_bounds)]
 use core::{arch::asm, marker::PhantomData};
 
-
 #[derive(Debug)]
 pub struct PortReader<T: ReadPort> {
     port: u16,
-    _phantom_data: PhantomData<T>
+    _phantom_data: PhantomData<T>,
 }
 
 impl<T: ReadPort> PortReader<T> {
     pub fn new(port: u16) -> Self {
-        Self { port, _phantom_data: PhantomData }
+        Self {
+            port,
+            _phantom_data: PhantomData,
+        }
     }
     pub fn read(&self) -> T {
         unsafe { T::read_port(self.port) }
     }
 }
 
-
 #[derive(Debug)]
 pub struct PortWriter<T: WritePort> {
     port: u16,
-    _phantom_data: PhantomData<T>
+    _phantom_data: PhantomData<T>,
 }
 
 impl<T: WritePort> PortWriter<T> {
     pub fn new(port: u16) -> Self {
-        Self { port, _phantom_data: PhantomData }
+        Self {
+            port,
+            _phantom_data: PhantomData,
+        }
     }
     pub fn write(&self, value: T) {
         unsafe { T::write_port(self.port, value) };
@@ -36,12 +40,15 @@ impl<T: WritePort> PortWriter<T> {
 #[derive(Debug)]
 pub struct PortRW<T: ReadPort + WritePort> {
     port: u16,
-    _phantom_data: PhantomData<T>
+    _phantom_data: PhantomData<T>,
 }
 
 impl<T: ReadPort + WritePort> PortRW<T> {
     pub fn new(port: u16) -> Self {
-        Self { port, _phantom_data: PhantomData }
+        Self {
+            port,
+            _phantom_data: PhantomData,
+        }
     }
     pub fn read(&self) -> T {
         unsafe { T::read_port(self.port) }
@@ -50,10 +57,6 @@ impl<T: ReadPort + WritePort> PortRW<T> {
         unsafe { T::write_port(self.port, value) };
     }
 }
-
-
-
-
 
 trait WritePort {
     unsafe fn write_port(port: u16, value: Self);
@@ -71,7 +74,7 @@ impl WritePort for u8 {
             in("al") value,
             options(nomem, nostack)
         );
-    } 
+    }
 }
 
 impl WritePort for u16 {
@@ -82,7 +85,7 @@ impl WritePort for u16 {
             in("ax") value,
             options(nomem, nostack)
         );
-    } 
+    }
 }
 
 impl ReadPort for u8 {

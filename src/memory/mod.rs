@@ -1,6 +1,6 @@
 pub mod allocator;
 
-mod pager;
 mod heap;
-pub use pager::*;
+mod pager;
 pub use heap::*;
+pub use pager::*;

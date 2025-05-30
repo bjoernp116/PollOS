@@ -1,16 +1,19 @@
 use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
-use x86_64::{structures::paging::{FrameAllocator, PhysFrame, Size4KiB}, PhysAddr};
+use x86_64::{
+    structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
+    PhysAddr,
+};
 
 pub struct BootInfoFrameAllocator {
     memory_map: &'static MemoryMap,
-    next: usize
+    next: usize,
 }
 
 impl BootInfoFrameAllocator {
     pub unsafe fn new(memory_map: &'static MemoryMap) -> Self {
         Self {
             memory_map,
-            next: 0
+            next: 0,
         }
     }
     fn usable_frame(&self) -> impl Iterator<Item = PhysFrame> {
@@ -38,5 +41,3 @@ unsafe impl FrameAllocator<Size4KiB> for EmptyFrameAllocator {
         None
     }
 }
-
-

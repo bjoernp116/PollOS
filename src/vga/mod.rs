@@ -1,5 +1,3 @@
-
-
 mod driver;
 mod pixel;
 
@@ -9,14 +7,14 @@ pub use pixel::*;
 use lazy_static::lazy_static;
 use spin::Mutex;
 
-lazy_static!{
+lazy_static! {
     pub static ref VGA_DRIVER: Mutex<VGADriver> = Mutex::new(VGADriver::new());
 }
 
 pub enum Intensity {
     Debug,
     Error,
-    Warn
+    Warn,
 }
 
 #[doc(hidden)]
@@ -30,11 +28,10 @@ pub fn _print(intesity: Intensity, args: core::fmt::Arguments) {
         Intensity::Warn => ColorCode::new(Black, Yellow),
     };
     VGA_DRIVER.lock().set_color(color);
-    interrupts::without_interrupts(|| { 
-        write!(VGA_DRIVER.lock(), "{}", args).unwrap(); 
+    interrupts::without_interrupts(|| {
+        write!(VGA_DRIVER.lock(), "{}", args).unwrap();
     });
 }
-
 
 #[macro_export]
 macro_rules! print {

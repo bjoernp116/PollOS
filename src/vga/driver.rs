@@ -11,11 +11,10 @@ pub struct VGABuffer {
     bytes: [Volatile<Pixel>; BUFFER_HEIGHT * BUFFER_WIDTH],
 }
 
-
 pub struct VGADriver {
     column_position: usize,
     color_code: ColorCode,
-    buffer: &'static mut VGABuffer
+    buffer: &'static mut VGABuffer,
 }
 
 #[allow(unused)]
@@ -35,6 +34,7 @@ impl VGADriver {
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
+            b'\t' => self.column_position += 4,
             byte => {
                 if self.column_position >= BUFFER_WIDTH {
                     self.new_line()
@@ -42,15 +42,16 @@ impl VGADriver {
                 let row = BUFFER_HEIGHT - 1;
                 let col = self.column_position;
                 let color_code = self.color_code;
-                self.buffer.bytes[row*BUFFER_WIDTH + col].write(Pixel(byte, color_code));
+                self.buffer.bytes[row * BUFFER_WIDTH + col]
+                    .write(Pixel(byte, color_code));
                 self.column_position += 1;
             }
-        } 
+        }
     }
     pub fn write_string(&mut self, s: &str) {
         for byte in s.bytes() {
             match byte {
-                0x20..=0x7e | b'\n' => self.write_byte(byte),
+                0x20..=0x7e | b'\n' | b'\t' => self.write_byte(byte),
                 _ => self.write_byte(0xfe),
             }
         }
@@ -58,8 +59,10 @@ impl VGADriver {
     fn new_line(&mut self) {
         for row in 1..BUFFER_HEIGHT {
             for col in 0..BUFFER_WIDTH {
-                let charahter = self.buffer.bytes[row*BUFFER_WIDTH + col].read();
-                self.buffer.bytes[(row-1)*BUFFER_WIDTH + col].write(charahter);
+                let charahter =
+                    self.buffer.bytes[row * BUFFER_WIDTH + col].read();
+                self.buffer.bytes[(row - 1) * BUFFER_WIDTH + col]
+                    .write(charahter);
             }
         }
         self.clear_row(BUFFER_HEIGHT - 1);
@@ -68,21 +71,20 @@ impl VGADriver {
     fn clear_row(&mut self, row: usize) {
         let blank = Pixel::new();
         for col in 0..BUFFER_WIDTH {
-            self.buffer.bytes[row*BUFFER_WIDTH + col].write(blank);
+            self.buffer.bytes[row * BUFFER_WIDTH + col].write(blank);
         }
     }
     fn draw_row(&mut self, row: usize, pixel: Pixel) {
         for col in 0..BUFFER_WIDTH {
-            self.buffer.bytes[row*BUFFER_WIDTH + col].write(pixel);
+            self.buffer.bytes[row * BUFFER_WIDTH + col].write(pixel);
         }
     }
     fn draw_col(&mut self, col: usize, pixel: Pixel) {
         for row in 0..BUFFER_HEIGHT {
-            self.buffer.bytes[row*BUFFER_WIDTH + col].write(pixel);
+            self.buffer.bytes[row * BUFFER_WIDTH + col].write(pixel);
         }
     }
 }
-
 
 pub fn print_something() {
     let mut writer = VGADriver::new();
@@ -98,4 +100,3 @@ impl fmt::Write for VGADriver {
         Ok(())
     }
 }
-
