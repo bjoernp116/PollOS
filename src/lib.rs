@@ -9,6 +9,7 @@ use core::panic::PanicInfo;
 
 extern crate alloc;
 
+pub mod execute;
 pub mod file_system;
 pub mod gdt;
 pub mod interrupts;

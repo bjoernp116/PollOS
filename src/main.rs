@@ -10,7 +10,10 @@ use alloc::borrow::ToOwned;
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use pollos::{
-    file_system::{fat16::FAT16, ATABus, BusDrive, Directory, FileSystem},
+    execute::elf64::{ELF64Header, ELF64ProgramHeader},
+    file_system::{
+        fat16::FAT16, print_buffer, ATABus, BusDrive, Directory, FileSystem,
+    },
     memory::{allocator::BootInfoFrameAllocator, init_heap},
     *,
 };
@@ -36,9 +39,14 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         FileSystem::new(&ata, BusDrive::Slave).expect("Fat init failed!");
 
     let mut root: Directory<_> = fs.root().expect("Expected root!");
-    fs.load_file("test1.txt".to_owned(), &mut root).unwrap();
+    fs.load_file("printer.elf".to_owned(), &mut root).unwrap();
     let file = &root.files[0];
     let file_contents = fs.get_content(file);
+    print_buffer(&file_contents);
+    let header = ELF64Header::from(&file_contents[..]);
+    serial_println!("{:#x?}", header);
+    let program_header = ELF64ProgramHeader::from(&header);
+    serial_println!("{:#x?}", program_header);
 
     hlt_loop();
 }
