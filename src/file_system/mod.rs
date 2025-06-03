@@ -20,6 +20,7 @@ pub struct File {
     pub name: String,
     pub ext: String,
     pub start_sector: usize,
+    pub start_cluster: u16,
     pub size: u32,
     pub time_stamp: TimeStamp,
 }
@@ -45,7 +46,7 @@ impl<T: StorageEntry> Directory<T> {
 }
 
 pub struct FileSystem<'a, T: StorageFormat<'a>> {
-    storage_format: T,
+    pub storage_format: T,
     _phantom: PhantomData<&'a T>,
 }
 
@@ -82,7 +83,7 @@ impl<'a, T: StorageFormat<'a>> FileSystem<'a, T> {
             }
         }
     }
-    pub fn get_content(&self, file: &File) -> [u8; SECTOR_SIZE] {
+    pub fn get_content(&self, file: &File) -> Vec<u8> {
         self.storage_format.get_content(file).unwrap()
     }
     pub fn load_file(
@@ -113,7 +114,13 @@ pub trait StorageFormat<'a>: Sized {
         directory: &mut Directory<Self::Entry>,
     ) -> LoadChildResult;
     fn is_directory(entry: &Self::Entry) -> bool;
-    fn get_content(&self, file: &File) -> anyhow::Result<[u8; SECTOR_SIZE]>;
+    fn get_content(&self, file: &File) -> anyhow::Result<Vec<u8>>;
+    fn read_bytes(
+        &self,
+        file: &File,
+        buffer: &mut [u8],
+        offset: usize,
+    ) -> anyhow::Result<()>;
 }
 
 pub enum LoadChildResult {

@@ -10,10 +10,8 @@ use alloc::borrow::ToOwned;
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use pollos::{
-    execute::elf64::{ELF64Header, ELF64ProgramHeader},
-    file_system::{
-        fat16::FAT16, print_buffer, ATABus, BusDrive, Directory, FileSystem,
-    },
+    execute::elf64::get_elf64,
+    file_system::{fat16::FAT16, ATABus, BusDrive, Directory, FileSystem},
     memory::{allocator::BootInfoFrameAllocator, init_heap},
     *,
 };
@@ -42,10 +40,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     fs.load_file("printer.elf".to_owned(), &mut root).unwrap();
     let file = &root.files[0];
     let file_contents = fs.get_content(file);
-    print_buffer(&file_contents);
-    let header = ELF64Header::from(&file_contents[..]);
+    serial_print!("{:?}", file_contents.len());
+
+    let (header, program_header) = get_elf64(&fs, &file).unwrap();
     serial_println!("{:#x?}", header);
-    let program_header = ELF64ProgramHeader::from(&header);
     serial_println!("{:#x?}", program_header);
 
     hlt_loop();

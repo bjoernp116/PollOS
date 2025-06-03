@@ -2,7 +2,7 @@ use core::fmt::{Debug, Display};
 
 use alloc::{borrow::ToOwned, boxed::Box, string::String, vec::Vec};
 
-use crate::{println, utils::DoubleVecIndex};
+use crate::{println, serial_println, utils::DoubleVecIndex};
 
 use super::{
     ATABus, BusDrive, Directory, File, LoadChildResult, StorageEntry,
@@ -296,6 +296,7 @@ impl<'a> StorageFormat<'a> for FAT16<'a> {
                 start_sector: self
                     .boot_sector
                     .cluster_to_sector(entry.entry.start_cluster),
+                start_cluster: entry.entry.start_cluster,
                 size: entry.entry.file_size as u32,
                 time_stamp: entry.entry.timestamp(),
                 name: entry.name,
@@ -305,14 +306,65 @@ impl<'a> StorageFormat<'a> for FAT16<'a> {
             LoadChildResult::File(directory.files.len())
         }
     }
-    fn get_content(&self, file: &File) -> anyhow::Result<[u8; SECTOR_SIZE]> {
-        let mut out = [0u8; SECTOR_SIZE];
-        self.ata.read(&mut out, self.drive, file.start_sector, 1)?;
-        Ok(out)
+    fn get_content(&self, file: &File) -> anyhow::Result<Vec<u8>> {
+        let mut sector = file.start_cluster as usize;
+        let mut remaining =
+            (file.size as usize + SECTOR_SIZE - 1) / SECTOR_SIZE;
+
+        let mut result = Vec::with_capacity(remaining);
+
+        while sector < 0xFFF8 && remaining > 0 {
+            let mut sector_buf = [0u8; SECTOR_SIZE];
+            self.ata.read(&mut sector_buf, self.drive, sector, 1);
+
+            result.append(&mut sector_buf.to_vec());
+
+            sector += 1;
+            remaining -= 1;
+        }
+        Ok(result)
     }
     fn is_directory(entry: &Self::Entry) -> bool {
         FatAttributes::from_bits_retain(entry.entry.attributes)
             .intersects(FatAttributes::DIRECTORY)
+    }
+    fn read_bytes(
+        &self,
+        file: &File,
+        buffer: &mut [u8],
+        offset: usize,
+    ) -> anyhow::Result<()> {
+        let mut sector_start = file.start_sector + (offset / SECTOR_SIZE);
+        let mut sector_offset = offset % SECTOR_SIZE;
+        let mut remaining = buffer.len();
+        let mut dst_offset = 0;
+
+        let mut sector_buf = [0u8; SECTOR_SIZE];
+
+        while remaining > 0 {
+            self.ata
+                .read(&mut sector_buf, self.drive, sector_start, 1)?;
+
+            serial_println!(
+                "Read Bytes: [{}..{}]",
+                sector_start,
+                sector_offset
+            );
+
+            let copy_start = sector_offset;
+            let copy_len = core::cmp::min(SECTOR_SIZE - copy_start, remaining);
+
+            buffer[dst_offset..dst_offset + copy_len].copy_from_slice(
+                &sector_buf[copy_start..copy_start + copy_len],
+            );
+
+            remaining -= copy_len;
+            dst_offset += copy_len;
+
+            sector_offset = 0;
+            sector_start += 1;
+        }
+        Ok(())
     }
 }
 

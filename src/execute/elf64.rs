@@ -1,4 +1,4 @@
-use crate::file_system::SECTOR_SIZE;
+use crate::file_system::{File, FileSystem, StorageFormat};
 
 #[derive(Debug, Clone)]
 #[repr(C, packed)]
@@ -22,16 +22,40 @@ pub struct ELF64Header {
     section_header_entry_size: u16,
     section_header_entries: u16,
     section_name_index: u16,
-    _rest: [u8; SECTOR_SIZE - 64],
+}
+
+impl ELF64Header {
+    fn flip_endianess(&mut self) {
+        self._os = u16::from_be(self._os);
+        self.object_type = u16::from_be(self.object_type);
+        self.arch = u16::from_be(self.arch);
+        self.version2 = u32::from_be(self.version2);
+        self.instruction_pointer_entry =
+            u64::from_be(self.instruction_pointer_entry);
+        self.program_header_entry = u64::from_be(self.program_header_entry);
+        self.section_header_entry = u64::from_be(self.section_header_entry);
+        self.flags = u32::from_be(self.flags);
+        self.header_size = u16::from_be(self.header_size);
+        self.program_header_size = u16::from_be(self.program_header_size);
+        self.program_header_entries = u16::from_be(self.program_header_entries);
+        self.section_header_entry_size =
+            u16::from_be(self.section_header_entry_size);
+        self.section_header_entries = u16::from_be(self.section_header_entries);
+        self.section_name_index = u16::from_be(self.section_name_index);
+    }
 }
 
 impl From<&[u8]> for ELF64Header {
     fn from(value: &[u8]) -> Self {
-        unsafe { core::ptr::read(value.as_ptr() as *const ELF64Header) }
+        let mut header =
+            unsafe { core::ptr::read(value.as_ptr() as *const ELF64Header) };
+        header.flip_endianess();
+        header
     }
 }
 
 #[derive(Debug)]
+#[repr(C, packed)]
 pub struct ELF64ProgramHeader {
     segment_type: u32,
     segment_flags: u32,
@@ -43,26 +67,44 @@ pub struct ELF64ProgramHeader {
     alignment: u64,
 }
 
-impl From<&ELF64Header> for ELF64ProgramHeader {
-    fn from(header: &ELF64Header) -> Self {
-        let entry = (header.program_header_entry) as usize;
-        let section: &[u8] = &header._rest[0 + entry..56 + entry];
-        unsafe {
-            core::ptr::read(section.as_ptr() as *const ELF64ProgramHeader)
-        }
+impl ELF64ProgramHeader {
+    fn flip_endianess(&mut self) {
+        self.segment_type = u32::from_be(self.segment_type);
+        self.segment_flags = u32::from_be(self.segment_flags);
+        self.offset = u64::from_be(self.offset);
+        self.virt_addr = u64::from_be(self.virt_addr);
+        self.phys_addr = u64::from_be(self.phys_addr);
+        self.file_image_size = u64::from_be(self.file_image_size);
+        self.memory_size = u64::from_be(self.memory_size);
+        self.alignment = u64::from_be(self.alignment);
     }
 }
 
-fn filp_endian(value: u64) -> u64 {
-    let a = value & 0xFFFF000000000000;
-    let b = value & 0x0000FFFF00000000;
-    let c = value & 0x00000000FFFF0000;
-    let d = value & 0x000000000000FFFF;
-    (a >> 48) + (b >> 16) + (c >> 16) + 
+impl From<&[u8; 56]> for ELF64ProgramHeader {
+    fn from(section: &[u8; 56]) -> Self {
+        let mut header = unsafe {
+            core::ptr::read(section.as_ptr() as *const ELF64ProgramHeader)
+        };
+        header.flip_endianess();
+        header
+    }
 }
 
+pub fn get_elf64<'a, T: StorageFormat<'a>>(
+    fs: &FileSystem<'a, T>,
+    file: &File,
+) -> anyhow::Result<(ELF64Header, ELF64ProgramHeader)> {
+    let header_sector = fs.get_content(file);
+    let header = ELF64Header::from(&header_sector[..0x40]);
 
+    let mut program_header_buffer = [0u8; size_of::<ELF64ProgramHeader>()];
 
+    fs.storage_format.read_bytes(
+        file,
+        &mut program_header_buffer,
+        header.program_header_entry as usize,
+    )?;
 
-
-
+    let program_header = ELF64ProgramHeader::from(&program_header_buffer);
+    Ok((header, program_header))
+}

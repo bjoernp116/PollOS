@@ -16,6 +16,10 @@ bitflags = "2.9.1"
 ata = "3.1.0"
 anyhow = {version = "1.0.98", default-features = false}
 
+[dependencies.elf]
+version = "0.8.0"
+default-features = false
+
 [package.metadata.bootimage]
 test-args = [
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", 
