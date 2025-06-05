@@ -1,23 +1,37 @@
+use alloc::vec::Vec;
+use x86_64::{
+    structures::paging::{FrameAllocator, OffsetPageTable},
+    VirtAddr,
+};
+
 use crate::{
     file_system::{File, FileSystem, StorageFormat},
-    println,
+    memory::allocator::BootInfoFrameAllocator,
 };
+
+use super::{Executor, UserContext};
+
+#[derive(Debug, Clone)]
+#[repr(C, packed)]
+pub struct ELF64Identity {
+    _magic_number: u32, // 0x00
+    format: u8,         // 0x04
+    endianess: u8,      // 0x05
+    version1: u8,       // 0x06
+    _os: u8,            // 0x08
+    _padding: [u8; 7],  // 0x09
+}
 
 #[derive(Debug, Clone)]
 #[repr(C, packed)]
 pub struct ELF64Header {
-    _magic_number: u32,
-    format: u8,
-    endianess: u8,
-    version1: u8,
-    _os: u16,
-    _padding: [u8; 8],
-    object_type: u16,
-    arch: u16,
-    version2: u32,
-    instruction_pointer_entry: u64,
-    program_header_entry: u64,
-    section_header_entry: u64,
+    identity: [u8; 16],             // 0x00
+    object_type: u16,               // 0x10
+    arch: u16,                      // 0x12
+    version2: u32,                  // 0x14
+    instruction_pointer_entry: u64, // 0x18
+    program_header_entry: u64,      // 0x20
+    section_header_entry: u64,      // 0x28
     flags: u32,
     header_size: u16,
     program_header_size: u16,
@@ -29,7 +43,6 @@ pub struct ELF64Header {
 
 impl ELF64Header {
     fn flip_endianess(&mut self) {
-        self._os = u16::from_be(self._os);
         self.object_type = u16::from_be(self.object_type);
         self.arch = u16::from_be(self.arch);
         self.version2 = u32::from_be(self.version2);
@@ -50,9 +63,16 @@ impl ELF64Header {
 
 impl From<&[u8]> for ELF64Header {
     fn from(value: &[u8]) -> Self {
-        let mut header =
+        if value.len() != core::mem::size_of::<ELF64Header>() {
+            panic!(
+                "Value: {:?}, Size: {:?}",
+                value.len(),
+                core::mem::size_of::<ELF64Header>()
+            );
+        }
+        let header =
             unsafe { core::ptr::read(value.as_ptr() as *const ELF64Header) };
-        header.flip_endianess();
+        //header.flip_endianess();
         header
     }
 }
@@ -85,25 +105,166 @@ impl ELF64ProgramHeader {
 
 impl From<&[u8]> for ELF64ProgramHeader {
     fn from(section: &[u8]) -> Self {
-        let mut header = unsafe {
+        let header = unsafe {
             core::ptr::read(section.as_ptr() as *const ELF64ProgramHeader)
         };
-        header.flip_endianess();
+        //header.flip_endianess();
         header
+    }
+}
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone)]
+    pub struct ELF64SegmentFlags: u32 {
+        const EXACUTABLE = 0x1;
+        const WRITABLE = 0x2;
+        const READABLE = 0x4;
     }
 }
 
 pub fn get_elf64<'a, T: StorageFormat<'a>>(
     fs: &FileSystem<'a, T>,
     file: &File,
-) -> anyhow::Result<(ELF64Header, ELF64ProgramHeader)> {
+) -> anyhow::Result<(ELF64Header, Vec<ELF64ProgramHeader>)> {
     let header_sector = fs.get_content(file);
-    println!("{}", header_sector.len());
-    let header = ELF64Header::from(&header_sector[..40]);
-    let entry = header.program_header_entry;
-    println!("{:#x?}", entry);
-    let program_header = ELF64ProgramHeader::from(
-        &header_sector[header.program_header_entry as usize..],
+    let header = ELF64Header::from(&header_sector[..0x40]);
+
+    let size = header.program_header_size as usize;
+    let mut entry = header.program_header_entry as usize;
+    let mut program_headers = Vec::new();
+
+    for _ in 0..header.program_header_entries {
+        let program_header =
+            ELF64ProgramHeader::from(&header_sector[entry..entry + size]);
+        program_headers.push(program_header);
+        entry += size;
+    }
+    Ok((header, program_headers))
+}
+
+pub fn map_program_header(
+    program_header: &ELF64ProgramHeader,
+    mapper: &mut OffsetPageTable,
+    frame_allocator: &mut BootInfoFrameAllocator,
+) {
+    use x86_64::structures::paging::{
+        mapper::Mapper, FrameAllocator, Page, PageTableFlags,
+    };
+
+    let start_addr = VirtAddr::new(program_header.virt_addr);
+    let end_addr = start_addr + program_header.memory_size;
+    let start_page = Page::containing_address(start_addr);
+    let end_page = Page::containing_address(end_addr - 1);
+
+    for page in Page::range_inclusive(start_page, end_page) {
+        let frame = frame_allocator.allocate_frame().expect("no frame");
+        let mut flags = PageTableFlags::PRESENT;
+        flags |= PageTableFlags::WRITABLE;
+        unsafe {
+            mapper
+                .map_to(page, frame, flags, frame_allocator)
+                .expect("map failed")
+                .flush();
+        }
+    }
+}
+
+pub fn map_stack(
+    mapper: &mut OffsetPageTable,
+    frame_allocator: &mut BootInfoFrameAllocator,
+) -> anyhow::Result<VirtAddr> {
+    use x86_64::{
+        structures::paging::{
+            mapper::Mapper, FrameAllocator, Page, PageTableFlags,
+        },
+        VirtAddr,
+    };
+
+    let stack_size: u64 = 16 * 1024;
+    let stack_top = VirtAddr::new(0x0000_8000_0000);
+    let stack_bottom = stack_top - stack_size;
+    let start_page = Page::containing_address(stack_bottom);
+    let end_page = Page::containing_address(stack_top - 1u64);
+
+    for page in Page::range_inclusive(start_page, end_page) {
+        let frame = frame_allocator.allocate_frame().expect("no frame");
+        let flags = PageTableFlags::WRITABLE
+            | PageTableFlags::PRESENT
+            | PageTableFlags::USER_ACCESSIBLE;
+        unsafe {
+            mapper
+                .map_to(page, frame, flags, frame_allocator)
+                .expect("map failed")
+                .flush();
+        }
+    }
+
+    Ok(stack_top)
+}
+
+pub fn load_program_header(
+    program_header: &ELF64ProgramHeader,
+    content: Vec<u8>,
+) {
+    let file_offset = program_header.offset as usize;
+    let file_size = program_header.file_image_size as usize;
+    let file_bytes = &content[file_offset..file_offset + file_size];
+
+    let mem_ptr = program_header.virt_addr as *mut u8;
+
+    unsafe {
+        core::ptr::copy_nonoverlapping(file_bytes.as_ptr(), mem_ptr, file_size);
+        let mem_size = program_header.memory_size as usize;
+        if mem_size > file_size {
+            core::ptr::write_bytes(
+                mem_ptr.add(file_size),
+                0,
+                mem_size - file_size,
+            );
+        }
+    }
+}
+
+pub struct ELF64;
+
+impl Executor for ELF64 {
+    fn load_executable<'a, T: StorageFormat<'a>>(
+        fs: &FileSystem<'a, T>,
+        file: &File,
+        mapper: &mut OffsetPageTable,
+        frame_allocator: &mut BootInfoFrameAllocator,
+    ) -> anyhow::Result<()> {
+        let (header, program_headers) = get_elf64(fs, file)?;
+
+        for program_header in program_headers {
+            map_program_header(&program_header, mapper, frame_allocator);
+            load_program_header(&program_header, fs.get_content(file));
+        }
+        let stack_top = map_stack(mapper, frame_allocator)?;
+        let rip = header.instruction_pointer_entry;
+
+        let user_context = UserContext::new(rip, stack_top.as_u64());
+        unsafe {
+            enter_user_mode(&user_context);
+        };
+        Ok(())
+    }
+}
+
+pub unsafe fn enter_user_mode(ctx: &UserContext) -> ! {
+    core::arch::asm!(
+        "mov rsp, {0}",
+        "push {1}",        // SS
+        "push {0}",        // RSP
+        "push {2}",        // RFLAGS
+        "push {3}",        // CS
+        "push {4}",        // RIP
+        "iretq",
+        in(reg) ctx.rsp,
+        in(reg) ctx.ss,
+        in(reg) ctx.rflags,
+        in(reg) ctx.cs,
+        in(reg) ctx.rip,
+        options(noreturn)
     );
-    Ok((header, program_header))
 }

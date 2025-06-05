@@ -10,7 +10,7 @@ use alloc::borrow::ToOwned;
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use pollos::{
-    execute::elf64::get_elf64,
+    execute::{elf64::ELF64, Executor},
     file_system::{fat16::FAT16, ATABus, BusDrive, Directory, FileSystem},
     memory::{allocator::BootInfoFrameAllocator, init_heap},
     *,
@@ -39,11 +39,9 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut root: Directory<_> = fs.root().expect("Expected root!");
     fs.load_file("printer.elf".to_owned(), &mut root).unwrap();
     let file = &root.files[0];
-    serial_println!("{:#?}", file);
 
-    let (header, program_header) = get_elf64(&fs, &file).unwrap();
-    serial_println!("{:#x?}", header);
-    serial_println!("{:#x?}", program_header);
+    ELF64::load_executable(&fs, file, &mut mapper, &mut frame_allocator)
+        .unwrap();
 
     hlt_loop();
 }
