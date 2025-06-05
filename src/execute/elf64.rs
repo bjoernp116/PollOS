@@ -1,4 +1,7 @@
-use crate::file_system::{File, FileSystem, StorageFormat};
+use crate::{
+    file_system::{File, FileSystem, StorageFormat},
+    println,
+};
 
 #[derive(Debug, Clone)]
 #[repr(C, packed)]
@@ -80,8 +83,8 @@ impl ELF64ProgramHeader {
     }
 }
 
-impl From<&[u8; 56]> for ELF64ProgramHeader {
-    fn from(section: &[u8; 56]) -> Self {
+impl From<&[u8]> for ELF64ProgramHeader {
+    fn from(section: &[u8]) -> Self {
         let mut header = unsafe {
             core::ptr::read(section.as_ptr() as *const ELF64ProgramHeader)
         };
@@ -95,16 +98,12 @@ pub fn get_elf64<'a, T: StorageFormat<'a>>(
     file: &File,
 ) -> anyhow::Result<(ELF64Header, ELF64ProgramHeader)> {
     let header_sector = fs.get_content(file);
-    let header = ELF64Header::from(&header_sector[..0x40]);
-
-    let mut program_header_buffer = [0u8; size_of::<ELF64ProgramHeader>()];
-
-    fs.storage_format.read_bytes(
-        file,
-        &mut program_header_buffer,
-        header.program_header_entry as usize,
-    )?;
-
-    let program_header = ELF64ProgramHeader::from(&program_header_buffer);
+    println!("{}", header_sector.len());
+    let header = ELF64Header::from(&header_sector[..40]);
+    let entry = header.program_header_entry;
+    println!("{:#x?}", entry);
+    let program_header = ELF64ProgramHeader::from(
+        &header_sector[header.program_header_entry as usize..],
+    );
     Ok((header, program_header))
 }

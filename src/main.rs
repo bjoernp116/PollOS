@@ -39,8 +39,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut root: Directory<_> = fs.root().expect("Expected root!");
     fs.load_file("printer.elf".to_owned(), &mut root).unwrap();
     let file = &root.files[0];
-    let file_contents = fs.get_content(file);
-    serial_print!("{:?}", file_contents.len());
+    serial_println!("{:#?}", file);
 
     let (header, program_header) = get_elf64(&fs, &file).unwrap();
     serial_println!("{:#x?}", header);

@@ -58,13 +58,6 @@ impl<'a, T: StorageFormat<'a>> FileSystem<'a, T> {
             _phantom: PhantomData,
         })
     }
-    pub fn get_from_path(&self, path: String) -> Option<&File> {
-        //let mut dir = self.root();
-        for name in split_path(path) {
-            //dir = self.load_directory(name, dir);
-        }
-        None
-    }
     pub fn root(&'a self) -> anyhow::Result<Directory<T::Entry>> {
         self.storage_format.get_root()
     }
@@ -195,8 +188,4 @@ pub fn print_buffer(buffer: &[u8; SECTOR_SIZE]) {
         serial_print!("{:02x} ", byte);
     }
     serial_println!();
-}
-
-fn split_path(path: String) -> Vec<String> {
-    path.split('/').map(|n| n.into()).collect()
 }

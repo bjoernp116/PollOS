@@ -2,7 +2,7 @@ use core::fmt::{Debug, Display};
 
 use alloc::{borrow::ToOwned, boxed::Box, string::String, vec::Vec};
 
-use crate::{println, serial_println, utils::DoubleVecIndex};
+use crate::{serial_println, utils::DoubleVecIndex};
 
 use super::{
     ATABus, BusDrive, Directory, File, LoadChildResult, StorageEntry,
@@ -291,7 +291,6 @@ impl<'a> StorageFormat<'a> for FAT16<'a> {
             directory.directories.push(Box::new(dir));
             LoadChildResult::Directory(directory.directories.len())
         } else {
-            println!("FILE!");
             let file = File {
                 start_sector: self
                     .boot_sector
@@ -307,21 +306,25 @@ impl<'a> StorageFormat<'a> for FAT16<'a> {
         }
     }
     fn get_content(&self, file: &File) -> anyhow::Result<Vec<u8>> {
-        let mut sector = file.start_cluster as usize;
+        let mut sector = file.start_sector as usize;
         let mut remaining =
             (file.size as usize + SECTOR_SIZE - 1) / SECTOR_SIZE;
 
         let mut result = Vec::with_capacity(remaining);
 
-        while sector < 0xFFF8 && remaining > 0 {
+        while remaining > 0 {
             let mut sector_buf = [0u8; SECTOR_SIZE];
-            self.ata.read(&mut sector_buf, self.drive, sector, 1);
+            self.ata.read(&mut sector_buf, self.drive, sector, 1)?;
 
             result.append(&mut sector_buf.to_vec());
 
             sector += 1;
             remaining -= 1;
         }
+        // this is safe because the results has to be larger or equal to the size of the file!
+        unsafe {
+            result.set_len(file.size as usize);
+        };
         Ok(result)
     }
     fn is_directory(entry: &Self::Entry) -> bool {
