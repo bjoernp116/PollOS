@@ -27,8 +27,8 @@ pub struct UserContext {
 impl UserContext {
     pub fn new(entry_point: u64, user_stack_top: u64) -> Self {
         // Standard GDT selectors for user mode
-        let cs = 0x23; // User code segment, RPL=3
-        let ss = 0x1b; // User data segment, RPL=3
+        let cs = 0x23; //GDT.1.user_code_selector.0 as u64; // User code segment, RPL=3
+        let ss = 0x1b; //GDT.1.user_data_selector.0 as u64; // User data segment, RPL=3
         let rflags = 0x202; // Interrupts enabled
 
         Self {
@@ -39,4 +39,22 @@ impl UserContext {
             rflags,
         }
     }
+}
+
+pub unsafe fn enter_user_mode(ctx: &UserContext) -> ! {
+    core::arch::asm!(
+        "mov rsp, {0}",
+        "push {1}",        // SS
+        "push {0}",        // RSP
+        "push {2}",        // RFLAGS
+        "push {3}",        // CS
+        "push {4}",        // RIP
+        "iretq",
+        in(reg) ctx.rsp,
+        in(reg) ctx.ss,
+        in(reg) ctx.rflags,
+        in(reg) ctx.cs,
+        in(reg) ctx.rip,
+        options(noreturn)
+    );
 }

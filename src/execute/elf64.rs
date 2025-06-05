@@ -9,7 +9,7 @@ use crate::{
     memory::allocator::BootInfoFrameAllocator,
 };
 
-use super::{Executor, UserContext};
+use super::{enter_user_mode, Executor, UserContext};
 
 #[derive(Debug, Clone)]
 #[repr(C, packed)]
@@ -249,22 +249,4 @@ impl Executor for ELF64 {
         };
         Ok(())
     }
-}
-
-pub unsafe fn enter_user_mode(ctx: &UserContext) -> ! {
-    core::arch::asm!(
-        "mov rsp, {0}",
-        "push {1}",        // SS
-        "push {0}",        // RSP
-        "push {2}",        // RFLAGS
-        "push {3}",        // CS
-        "push {4}",        // RIP
-        "iretq",
-        in(reg) ctx.rsp,
-        in(reg) ctx.ss,
-        in(reg) ctx.rflags,
-        in(reg) ctx.cs,
-        in(reg) ctx.rip,
-        options(noreturn)
-    );
 }
