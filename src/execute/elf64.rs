@@ -1,12 +1,16 @@
 use alloc::vec::Vec;
 use x86_64::{
-    structures::paging::{FrameAllocator, OffsetPageTable},
+    structures::paging::{
+        page_table::PageTableLevel, FrameAllocator, OffsetPageTable, Page,
+        PageTableFlags, Size4KiB,
+    },
     VirtAddr,
 };
 
 use crate::{
     file_system::{File, FileSystem, StorageFormat},
     memory::allocator::BootInfoFrameAllocator,
+    serial_println,
 };
 
 use super::{enter_user_mode, Executor, UserContext};
@@ -172,7 +176,7 @@ pub fn map_program_header(
 pub fn map_stack(
     mapper: &mut OffsetPageTable,
     frame_allocator: &mut BootInfoFrameAllocator,
-) -> anyhow::Result<VirtAddr> {
+) -> anyhow::Result<(VirtAddr, u64, VirtAddr)> {
     use x86_64::{
         structures::paging::{
             mapper::Mapper, FrameAllocator, Page, PageTableFlags,
@@ -199,7 +203,7 @@ pub fn map_stack(
         }
     }
 
-    Ok(stack_top)
+    Ok((stack_top, stack_size, stack_bottom))
 }
 
 pub fn load_program_header(
@@ -240,13 +244,52 @@ impl Executor for ELF64 {
             map_program_header(&program_header, mapper, frame_allocator);
             load_program_header(&program_header, fs.get_content(file));
         }
-        let stack_top = map_stack(mapper, frame_allocator)?;
+        let (stack_top, ..) = map_stack(mapper, frame_allocator)?;
         let rip = header.instruction_pointer_entry;
 
         let user_context = UserContext::new(rip, stack_top.as_u64());
+        serial_println!("{:#x?}", user_context);
         unsafe {
             enter_user_mode(&user_context);
         };
         Ok(())
     }
+}
+
+pub fn test_user_stack_setup(
+    mapper: &mut OffsetPageTable,
+    frame_allocator: &mut BootInfoFrameAllocator,
+) -> anyhow::Result<()> {
+    // These would come from your stack setup code
+    let (stack_top, stack_size, stack_bottom) =
+        map_stack(mapper, frame_allocator)?;
+    use x86_64::structures::paging::mapper::Mapper;
+
+    // Check that stack pointer is canonical
+    //assert!(stack_top.is_canonical(), "stack_top is not canonical");
+
+    // Check all pages in stack range are mapped, present, user, writable
+    let start_page: Page<Size4KiB> = Page::containing_address(stack_bottom);
+    let end_page: Page<Size4KiB> = Page::containing_address(stack_top - 1u64);
+
+    for page in Page::range_inclusive(start_page, end_page) {
+        let frame = mapper.translate_page(page).expect("Page not mapped");
+        let index = page.page_table_index(PageTableLevel::One);
+        let entry = mapper.level_4_table()[index].clone();
+        serial_println!("{:#x?}", entry);
+        assert!(
+            entry.flags().contains(PageTableFlags::PRESENT),
+            "Not present"
+        );
+        assert!(
+            entry.flags().contains(PageTableFlags::USER_ACCESSIBLE),
+            "Not user"
+        );
+        assert!(
+            entry.flags().contains(PageTableFlags::WRITABLE),
+            "Not writable"
+        );
+    }
+    // Additional checks as needed, e.g., overlap
+    Ok(())
 }

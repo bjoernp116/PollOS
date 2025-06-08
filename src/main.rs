@@ -40,9 +40,9 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     fs.load_file("printer.elf".to_owned(), &mut root).unwrap();
     let file = &root.files[0];
 
+    //test_user_stack_setup(&mut mapper, &mut frame_allocator).unwrap();
     ELF64::load_executable(&fs, file, &mut mapper, &mut frame_allocator)
         .unwrap();
-
     hlt_loop();
 }
 

@@ -16,6 +16,7 @@ pub trait Executor {
     ) -> anyhow::Result<()>;
 }
 
+#[derive(Debug)]
 pub struct UserContext {
     pub rip: u64,
     pub rsp: u64,
@@ -44,8 +45,8 @@ impl UserContext {
 pub unsafe fn enter_user_mode(ctx: &UserContext) -> ! {
     core::arch::asm!(
         "mov rsp, {0}",
-        "push {1}",        // SS
-        "push {0}",        // RSP
+        "push {0}",        // SS
+        "push {1}",        // RSP
         "push {2}",        // RFLAGS
         "push {3}",        // CS
         "push {4}",        // RIP
